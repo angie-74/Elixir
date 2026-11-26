@@ -53,6 +53,8 @@ struct CursorOps {
   std::function<bool(const RECT* screen_rect)> clip_cursor;
   std::function<bool(int screen_x, int screen_y)> set_cursor_pos;
   std::function<bool(POINT* screen)> get_cursor_pos;
+  std::function<bool(HWND hwnd)> register_raw_mouse;
+  std::function<bool(HWND hwnd)> is_foreground;
 };
 
 struct GameWindowOptions {
@@ -196,6 +198,9 @@ class GameWindow final {
   bool SetFullscreen(bool fullscreen, const char* reason);
   bool ToggleFullscreen(const char* reason);
   bool fullscreen() const { return fullscreen_; }
+  bool focused() const { return focused_; }
+  bool InForeground() const;
+  bool has_input_focus() const { return focused_ && InForeground(); }
   bool RequestFullscreenFromAndroidWindowFlags(int flags, int mask);
   bool RequestFullscreenFromRobloxMenuLog(const char* tag,
                                           const char* message);
@@ -221,6 +226,9 @@ class GameWindow final {
                             const mocktail::window::TextInputOptions& options);
   bool RequestHideTextInput(std::uint64_t generation);
   std::uint64_t device_change_count() const { return device_changes_.load(); }
+  void AddRawMouseMotion(LONG delta_x, LONG delta_y);
+  void NoteAbsoluteRawMouse();
+  bool reads_mouse_directly() const { return raw_mouse_ && !raw_last_absolute_; }
   InputStats input_stats() const;
   mocktail::window::WindowPointerCaptureOwner& pointer_capture() { return *pointer_owner_; }
   Win32PointerCaptureBackend& pointer_backend() { return *pointer_backend_; }
@@ -242,6 +250,14 @@ class GameWindow final {
   void EndRelativeMotion();
   void SampleCapturedCursor();
   void ParkCapturedCursor(bool exactly);
+  bool RegisterRawMouse();
+  void OnRawInput(LPARAM lparam);
+  bool TakeRawMotion(float* delta_x, float* delta_y);
+  void FlushFreeRawMotion();
+  POINT RelativePinPoint() const;
+  bool PinCapturedCursor();
+  void HoldPinnedCursor();
+  void NoteCapturedStep(float delta_x, float delta_y);
   bool CursorClientPosition(POINT* client);
   bool RelativeMotionFollowsMouseLock() const;
   mocktail::window::PointerPosition RelativePin() const;
@@ -316,6 +332,16 @@ class GameWindow final {
   float cursor_x_ = 0.0F;
   float cursor_y_ = 0.0F;
   std::uint32_t buttons_down_ = 0;
+  bool raw_mouse_ = false;
+  bool raw_mouse_registered_ = false;
+  bool raw_last_absolute_ = false;
+  LONG raw_pending_x_ = 0;
+  LONG raw_pending_y_ = 0;
+  bool capture_raw_ = false;
+  bool pin_valid_ = false;
+  POINT pinned_at_{};
+  std::uint64_t last_absolute_move_ns_ = 0;
+  std::uint64_t absolute_delta_hold_until_ns_ = 0;
   bool relative_tracking_ = false;
   POINT relative_last_{};
   bool resync_cursor_position_ = false;

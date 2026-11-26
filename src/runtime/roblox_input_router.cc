@@ -484,7 +484,8 @@ RobloxInputDispatchResult RobloxInputRouter::HandleEvent(
     return Result(RobloxInputDispatchState::kIgnoredUnsupported, kind,
                   Unsupported("platform event has no Roblox input route"));
   }
-  if (!snapshot_.focused) {
+  if (!snapshot_.focused && (kind == RobloxInputEventKind::kKeyboard ||
+                             kind == RobloxInputEventKind::kText)) {
     snapshot_.focused = true;
   }
 

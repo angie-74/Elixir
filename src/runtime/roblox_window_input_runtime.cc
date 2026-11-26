@@ -185,6 +185,16 @@ bool RobloxWindowInputRuntime::PumpHookCallback(void* context) {
       self->seen_device_changes_ = changes;
       self->gamepads_.NotifyDeviceChange();
     }
+    const bool focused = game_window->has_input_focus();
+    if (self->runtime_.Snapshot().focused != focused) {
+      (void)self->runtime_.HandleEvent(
+          {elixir::window::GameWindow::MonotonicNs(),
+           platform::WindowFocusEvent{focused}});
+    }
+    if (focused && !self->controller_focus_) {
+      self->gamepads_.ResendState();
+    }
+    self->controller_focus_ = focused;
   }
   self->gamepads_.Poll(elixir::window::GameWindow::MonotonicNs());
   return true;
@@ -215,12 +225,14 @@ void RobloxWindowInputRuntime::PlatformEventCallback(
 #endif
   }
   (void)self->runtime_.HandleEvent(event);
+#if !defined(_WIN32)
   if (const auto* focus =
           std::get_if<platform::WindowFocusEvent>(&event.payload)) {
     if (focus->focused) {
       self->gamepads_.ResendState();
     }
   }
+#endif
 }
 
 Status RobloxWindowInputRuntime::Shutdown() {

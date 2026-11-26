@@ -34,6 +34,8 @@ constexpr wchar_t kWindowClassName[] = L"ElixirGameWindow";
 constexpr COLORREF kBackgroundColor = RGB(18, 18, 18);
 constexpr int kOffscreenOrigin = -20000;
 constexpr std::uint64_t kPersistDelayNs = 1'000'000'000ULL;
+constexpr std::uint64_t kReleaseSettleNs = 100'000'000ULL;
+constexpr std::uint64_t kFreeRawMotionWindowNs = 100'000'000ULL;
 constexpr int kMinimumVisibleRestoreExtent = 64;
 constexpr UINT kMicrophoneCommandFirst = 0x2000;
 constexpr UINT kMicrophoneCommandStride = 16;
@@ -353,7 +355,7 @@ bool Win32PointerCaptureBackend::Apply(const mwindow::PointerCaptureRequest& req
   }
   if (!request.relative_mode && relative_mode_) {
     if (request.release_position != mwindow::PointerReleasePosition::kUnchanged &&
-        window_->focused_ && window_->pixel_width_ > 0 && window_->pixel_height_ > 0) {
+        window_->has_input_focus() && window_->pixel_width_ > 0 && window_->pixel_height_ > 0) {
       POINT target = window_->ClientCenter();
       if (request.release_position == mwindow::PointerReleasePosition::kDragStart && drag_start_) {
         target.x = static_cast<LONG>(std::lround(std::clamp(
@@ -363,10 +365,17 @@ bool Win32PointerCaptureBackend::Apply(const mwindow::PointerCaptureRequest& req
       }
       POINT screen = target;
       ClientToScreen(hwnd, &screen);
-      WarpCursor(screen.x, screen.y);
-      POINT settled = target;
-      if (!window_->CursorClientPosition(&settled)) {
-        settled = target;
+      if (window_->options_.confine_cursor) {
+        const RECT hold{screen.x, screen.y, screen.x + 1, screen.y + 1};
+        clip_applied_ = Clip(&hold) || clip_applied_;
+      }
+      POINT settled{};
+      if (!window_->CursorClientPosition(&settled) || settled.x != target.x ||
+          settled.y != target.y) {
+        WarpCursor(screen.x, screen.y);
+        if (!window_->CursorClientPosition(&settled)) {
+          settled = target;
+        }
       }
       window_->cursor_x_ = static_cast<float>(settled.x);
       window_->cursor_y_ = static_cast<float>(settled.y);
@@ -399,8 +408,11 @@ void Win32PointerCaptureBackend::Reassert() {
   if (hwnd == nullptr) {
     return;
   }
-  if (relative_mode_ && window_->options_.confine_cursor && window_->focused_ &&
-      window_->pixel_width_ > 0 && window_->pixel_height_ > 0) {
+  const bool usable = relative_mode_ && window_->has_input_focus() &&
+                      window_->pixel_width_ > 0 && window_->pixel_height_ > 0;
+  if (usable && window_->capture_raw_) {
+    clip_applied_ = window_->PinCapturedCursor() || clip_applied_;
+  } else if (usable && window_->options_.confine_cursor) {
     RECT clip{};
     GetClientRect(hwnd, &clip);
     POINT top_left{clip.left, clip.top};
@@ -632,6 +644,12 @@ Status GameWindow::Create(const GameWindowOptions& options) {
   }
 
   focused_ = GetFocus() == hwnd_;
+  raw_last_absolute_ = false;
+  raw_pending_x_ = 0;
+  raw_pending_y_ = 0;
+  capture_raw_ = false;
+  pin_valid_ = false;
+  raw_mouse_ = RegisterRawMouse();
   if (!options_.start_hidden) {
     ShowNow();
   }
@@ -642,6 +660,10 @@ Status GameWindow::Create(const GameWindowOptions& options) {
                "  [window] created %s %ux%u px dpi=%u alt_enter=%d\n",
                WindowModeName(options_.mode), pixel_width_, pixel_height_, dpi_,
                options_.alt_enter_fullscreen ? 1 : 0);
+  if (!options_.offscreen) {
+    std::fprintf(stderr, "  [input] camera movement is read from the %s\n",
+                 raw_mouse_ ? "mouse" : "cursor");
+  }
   return Status::Ok();
 }
 
@@ -675,6 +697,20 @@ void GameWindow::Destroy() {
   if (GetCapture() == hwnd_) {
     ReleaseCapture();
   }
+  if (raw_mouse_registered_) {
+    RAWINPUTDEVICE device{};
+    device.usUsagePage = 0x01;
+    device.usUsage = 0x02;
+    device.dwFlags = RIDEV_REMOVE;
+    RegisterRawInputDevices(&device, 1, sizeof(device));
+    raw_mouse_registered_ = false;
+  }
+  raw_mouse_ = false;
+  raw_last_absolute_ = false;
+  raw_pending_x_ = 0;
+  raw_pending_y_ = 0;
+  capture_raw_ = false;
+  pin_valid_ = false;
   HWND hwnd = hwnd_;
   SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
   hwnd_ = nullptr;
@@ -876,6 +912,9 @@ LRESULT GameWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) {
     case WM_DEVICECHANGE:
       device_changes_.fetch_add(1, std::memory_order_relaxed);
       return TRUE;
+    case WM_INPUT:
+      OnRawInput(lparam);
+      break;
     case WM_MOUSEMOVE:
       OnMouseMove(lparam);
       return 0;
@@ -1074,6 +1113,8 @@ bool GameWindow::Pump() {
     DispatchMessageW(&message);
   }
   SampleCapturedCursor();
+  HoldPinnedCursor();
+  FlushFreeRawMotion();
   FlushMotion();
   in_pump_ = false;
   if (hwnd_ == nullptr) {
@@ -1621,10 +1662,14 @@ void GameWindow::OnFocus(bool focused) {
       ReleaseCapture();
     }
     buttons_down_ = 0;
+    raw_pending_x_ = 0;
+    raw_pending_y_ = 0;
     ReleaseDeliveredKeys();
     alt_enter_consumed_ = false;
     f11_consumed_ = false;
   } else {
+    raw_pending_x_ = 0;
+    raw_pending_y_ = 0;
     text_owner_->OnFocusGained();
     if (!pointer_owner_->OnFocusGained(TextInputActive())) {
       std::fprintf(stderr, "  [input] failed to restore pointer after focus gain\n");
@@ -1681,6 +1726,154 @@ POINT GameWindow::RelativeHome() const {
   return home;
 }
 
+bool GameWindow::InForeground() const {
+  if (hwnd_ == nullptr) {
+    return false;
+  }
+  if (options_.cursor_ops.is_foreground) {
+    return options_.cursor_ops.is_foreground(hwnd_);
+  }
+  if (options_.offscreen) {
+    return true;
+  }
+  const HWND foreground = GetForegroundWindow();
+  return foreground == hwnd_ || (foreground == nullptr && focused_);
+}
+
+bool GameWindow::RegisterRawMouse() {
+  raw_mouse_registered_ = false;
+  if (hwnd_ == nullptr) {
+    return false;
+  }
+  const CursorOps& ops = options_.cursor_ops;
+  if (ops.register_raw_mouse) {
+    return ops.register_raw_mouse(hwnd_);
+  }
+  if (options_.offscreen || ops.clip_cursor || ops.set_cursor_pos || ops.get_cursor_pos) {
+    return false;
+  }
+  RAWINPUTDEVICE device{};
+  device.usUsagePage = 0x01;
+  device.usUsage = 0x02;
+  device.hwndTarget = hwnd_;
+  raw_mouse_registered_ = RegisterRawInputDevices(&device, 1, sizeof(device)) != FALSE;
+  return raw_mouse_registered_;
+}
+
+void GameWindow::OnRawInput(LPARAM lparam) {
+  RAWINPUT input{};
+  UINT size = sizeof(input);
+  if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lparam), RID_INPUT, &input, &size,
+                      sizeof(RAWINPUTHEADER)) == static_cast<UINT>(-1) ||
+      input.header.dwType != RIM_TYPEMOUSE) {
+    return;
+  }
+  const RAWMOUSE& mouse = input.data.mouse;
+  if ((mouse.usFlags & MOUSE_MOVE_ABSOLUTE) != 0) {
+    NoteAbsoluteRawMouse();
+    return;
+  }
+  AddRawMouseMotion(mouse.lLastX, mouse.lLastY);
+}
+
+void GameWindow::AddRawMouseMotion(LONG delta_x, LONG delta_y) {
+  if (!raw_mouse_) {
+    return;
+  }
+  raw_last_absolute_ = false;
+  if (!focused_) {
+    return;
+  }
+  raw_pending_x_ += delta_x;
+  raw_pending_y_ += delta_y;
+}
+
+void GameWindow::NoteAbsoluteRawMouse() {
+  raw_last_absolute_ = true;
+  raw_pending_x_ = 0;
+  raw_pending_y_ = 0;
+}
+
+bool GameWindow::TakeRawMotion(float* delta_x, float* delta_y) {
+  *delta_x = static_cast<float>(raw_pending_x_);
+  *delta_y = static_cast<float>(raw_pending_y_);
+  raw_pending_x_ = 0;
+  raw_pending_y_ = 0;
+  return *delta_x != 0.0F || *delta_y != 0.0F;
+}
+
+void GameWindow::FlushFreeRawMotion() {
+  if (pointer_backend_->relative_mode()) {
+    if (!capture_raw_) {
+      raw_pending_x_ = 0;
+      raw_pending_y_ = 0;
+    }
+    return;
+  }
+  float delta_x = 0.0F;
+  float delta_y = 0.0F;
+  if (!TakeRawMotion(&delta_x, &delta_y)) {
+    return;
+  }
+  if (focused_ && has_cursor_position_ && reads_mouse_directly() &&
+      MonotonicNs() - last_absolute_move_ns_ <= kFreeRawMotionWindowNs) {
+    EmitMotion({cursor_x_, cursor_y_, delta_x, delta_y, ButtonMask(), false});
+  }
+}
+
+POINT GameWindow::RelativePinPoint() const {
+  const mwindow::PointerPosition pin = RelativePin();
+  POINT point{static_cast<LONG>(std::lround(pin.x)), static_cast<LONG>(std::lround(pin.y))};
+  point.x = std::clamp(point.x, LONG{0}, std::max(LONG{0}, static_cast<LONG>(pixel_width_) - 1));
+  point.y = std::clamp(point.y, LONG{0}, std::max(LONG{0}, static_cast<LONG>(pixel_height_) - 1));
+  return point;
+}
+
+bool GameWindow::PinCapturedCursor() {
+  if (hwnd_ == nullptr || pixel_width_ == 0 || pixel_height_ == 0) {
+    return false;
+  }
+  const POINT pin = RelativePinPoint();
+  POINT screen = pin;
+  ClientToScreen(hwnd_, &screen);
+  const RECT hold{screen.x, screen.y, screen.x + 1, screen.y + 1};
+  if (!ClipCursorScreen(&hold)) {
+    pin_valid_ = false;
+    ++capture_refused_resets_;
+    return false;
+  }
+  POINT now{};
+  if (!CursorClientPosition(&now) || now.x != pin.x || now.y != pin.y) {
+    WarpCursorScreen(screen.x, screen.y);
+  }
+  pinned_at_ = pin;
+  pin_valid_ = true;
+  return true;
+}
+
+void GameWindow::HoldPinnedCursor() {
+  if (hwnd_ == nullptr || !has_input_focus() || !capture_raw_ ||
+      !pointer_backend_->relative_mode()) {
+    return;
+  }
+  const POINT pin = RelativePinPoint();
+  POINT now{};
+  const bool away = CursorClientPosition(&now) && (now.x != pin.x || now.y != pin.y);
+  if (pin_valid_ && !away && pinned_at_.x == pin.x && pinned_at_.y == pin.y) {
+    return;
+  }
+  ++capture_resets_;
+  pointer_backend_->Reassert();
+}
+
+void GameWindow::NoteCapturedStep(float delta_x, float delta_y) {
+  const float step = std::abs(delta_x) + std::abs(delta_y);
+  ++capture_moves_;
+  capture_travel_ += step;
+  capture_largest_step_ = std::max(capture_largest_step_, step);
+  capture_last_step_ = step;
+}
+
 void GameWindow::BeginRelativeMotion() {
   capture_started_ns_ = MonotonicNs();
   capture_follows_lock_ = RelativeMotionFollowsMouseLock();
@@ -1690,10 +1883,18 @@ void GameWindow::BeginRelativeMotion() {
   capture_last_step_ = 0.0F;
   capture_resets_ = 0;
   capture_refused_resets_ = 0;
+  raw_pending_x_ = 0;
+  raw_pending_y_ = 0;
+  capture_raw_ = reads_mouse_directly() && options_.confine_cursor;
   ResumeRelativeMotion();
 }
 
 void GameWindow::ResumeRelativeMotion() {
+  if (capture_raw_) {
+    pin_valid_ = false;
+    relative_tracking_ = false;
+    return;
+  }
   relative_tracking_ = CursorClientPosition(&relative_last_);
   ParkCapturedCursor(true);
 }
@@ -1701,21 +1902,29 @@ void GameWindow::ResumeRelativeMotion() {
 void GameWindow::EndRelativeMotion() {
   if (capture_started_ns_ != 0 && (capture_moves_ != 0 || capture_refused_resets_ != 0)) {
     std::fprintf(stderr,
-                 "  [input] pointer capture ended: %s, %llu ms, %u moves over %.0f px, largest %.0f px, "
-                 "last %.0f px, %u cursor resets, %u refused\n",
+                 "  [input] pointer capture ended: %s, read from the %s, %llu ms, %u moves over %.0f, "
+                 "largest %.0f, last %.0f, %u cursor resets, %u refused\n",
                  capture_follows_lock_ ? "mouse lock" : "right-button drag",
+                 capture_raw_ ? "mouse" : "cursor",
                  static_cast<unsigned long long>((MonotonicNs() - capture_started_ns_) / 1'000'000ULL),
                  capture_moves_, capture_travel_, capture_largest_step_, capture_last_step_,
                  capture_resets_, capture_refused_resets_);
   }
+  if (capture_started_ns_ != 0 && !capture_raw_) {
+    absolute_delta_hold_until_ns_ = MonotonicNs() + kReleaseSettleNs;
+  }
   capture_started_ns_ = 0;
+  capture_raw_ = false;
+  pin_valid_ = false;
+  raw_pending_x_ = 0;
+  raw_pending_y_ = 0;
   relative_tracking_ = false;
   resync_cursor_position_ = true;
   report_next_absolute_step_ = true;
 }
 
 void GameWindow::ParkCapturedCursor(bool exactly) {
-  if (hwnd_ == nullptr || !focused_ || pixel_width_ == 0 || pixel_height_ == 0) {
+  if (hwnd_ == nullptr || !has_input_focus() || pixel_width_ == 0 || pixel_height_ == 0) {
     return;
   }
   const POINT home = RelativeHome();
@@ -1739,7 +1948,17 @@ void GameWindow::ParkCapturedCursor(bool exactly) {
 }
 
 void GameWindow::SampleCapturedCursor() {
-  if (hwnd_ == nullptr || !focused_ || !pointer_backend_->relative_mode()) {
+  if (hwnd_ == nullptr || !has_input_focus() || !pointer_backend_->relative_mode()) {
+    return;
+  }
+  if (capture_raw_) {
+    float turned_x = 0.0F;
+    float turned_y = 0.0F;
+    if (TakeRawMotion(&turned_x, &turned_y)) {
+      NoteCapturedStep(turned_x, turned_y);
+      const mwindow::PointerPosition pin = RelativePin();
+      EmitMotion({pin.x, pin.y, turned_x, turned_y, ButtonMask(), true});
+    }
     return;
   }
   POINT now{};
@@ -1756,11 +1975,7 @@ void GameWindow::SampleCapturedCursor() {
   const float delta_y = static_cast<float>(now.y - relative_last_.y);
   relative_last_ = now;
   if (delta_x != 0.0F || delta_y != 0.0F) {
-    const float step = std::abs(delta_x) + std::abs(delta_y);
-    ++capture_moves_;
-    capture_travel_ += step;
-    capture_largest_step_ = std::max(capture_largest_step_, step);
-    capture_last_step_ = step;
+    NoteCapturedStep(delta_x, delta_y);
     const mwindow::PointerPosition pin = RelativePin();
     EmitMotion({pin.x, pin.y, delta_x, delta_y, ButtonMask(), true});
   }
@@ -1781,20 +1996,33 @@ void GameWindow::OnMouseMove(LPARAM lparam) {
       y = static_cast<float>(now.y);
     }
   }
-  const float delta_x = has_cursor_position_ ? x - cursor_x_ : 0.0F;
-  const float delta_y = has_cursor_position_ ? y - cursor_y_ : 0.0F;
-  const bool had_position = has_cursor_position_;
+  float delta_x = has_cursor_position_ ? x - cursor_x_ : 0.0F;
+  float delta_y = has_cursor_position_ ? y - cursor_y_ : 0.0F;
+  const bool moved = !has_cursor_position_ || delta_x != 0.0F || delta_y != 0.0F;
   cursor_x_ = x;
   cursor_y_ = y;
   has_cursor_position_ = true;
-  if (had_position && delta_x == 0.0F && delta_y == 0.0F) {
-    return;
-  }
-  if (report_next_absolute_step_) {
+  const std::uint64_t now_ns = MonotonicNs();
+  last_absolute_move_ns_ = now_ns;
+  if (moved && report_next_absolute_step_) {
     report_next_absolute_step_ = false;
     const float step = std::abs(delta_x) + std::abs(delta_y);
     if (step > 48.0F) {
       std::fprintf(stderr, "  [input] first move after the pointer capture: %.0f px\n", step);
+    }
+  }
+  if (reads_mouse_directly()) {
+    const bool turned = TakeRawMotion(&delta_x, &delta_y);
+    if (!moved && !turned) {
+      return;
+    }
+  } else {
+    if (!moved) {
+      return;
+    }
+    if (now_ns < absolute_delta_hold_until_ns_) {
+      delta_x = 0.0F;
+      delta_y = 0.0F;
     }
   }
   EmitMotion({x, y, delta_x, delta_y, ButtonMask(), false});

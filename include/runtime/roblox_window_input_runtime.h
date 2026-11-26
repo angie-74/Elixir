@@ -68,6 +68,7 @@ class RobloxWindowInputRuntime final {
   elixir::window::GamepadBackendPreference controller_preference_ =
       elixir::window::GamepadBackendPreference::kAuto;
   std::uint64_t seen_device_changes_ = 0;
+  bool controller_focus_ = false;
   bool pump_hook_registered_ = false;
   elixir::window::GameWindow* pump_hook_window_ = nullptr;
 #else
