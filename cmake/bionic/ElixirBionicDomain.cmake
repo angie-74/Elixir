@@ -1,0 +1,27 @@
+# Copyright 2026 Elixir Project Authors
+# Licensed under the Apache License, Version 2.0
+function(elixir_bionic_domain domain)
+  cmake_parse_arguments(ARG "" "" "DEPENDS" ${ARGN})
+  file(GLOB _sources CONFIGURE_DEPENDS
+    "${CMAKE_SOURCE_DIR}/src/bionic/${domain}/*.cc"
+    "${CMAKE_SOURCE_DIR}/src/bionic/${domain}/*.c")
+  if(NOT _sources)
+    return()
+  endif()
+  set(_lib elixir_bionic_${domain})
+  add_library(${_lib} STATIC ${_sources})
+  elixir_target(${_lib})
+  target_link_libraries(${_lib} PUBLIC elixir_bionic_runtime)
+  foreach(_dep IN LISTS ARG_DEPENDS)
+    target_link_libraries(${_lib} PUBLIC "$<TARGET_NAME_IF_EXISTS:${_dep}>")
+  endforeach()
+  if(BUILD_TESTING)
+    file(GLOB _tests CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/tests/windows/bionic/${domain}/*.cc")
+    if(_tests)
+      set(_test elixir_bionic_${domain}_test)
+      elixir_gtest(${_test} ${_tests})
+      target_link_libraries(${_test} PRIVATE ${_lib})
+      target_include_directories(${_test} PRIVATE "${CMAKE_SOURCE_DIR}/tests/windows/bionic")
+    endif()
+  endif()
+endfunction()

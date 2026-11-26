@@ -1,0 +1,33 @@
+{
+  "description": "Fast Flags that Roblox allows to be configured locally (ClientAppSettings.json). Elixir applies user Fast Flags only if they are on this list, so it never circumvents Roblox's restriction. Update this file when Roblox changes the list.",
+  "source": "https://devforum.roblox.com/t/allowlist-for-local-client-configuration-via-fast-flags/3966569",
+  "source_post_created": "2025-09-29T16:16:56Z",
+  "source_post_updated": "2025-10-16T23:33:24Z",
+  "retrieved": "2026-11-24",
+  "groups": {
+    "Geometry": [
+      "DFIntCSGLevelOfDetailSwitchingDistance",
+      "DFIntCSGLevelOfDetailSwitchingDistanceL12",
+      "DFIntCSGLevelOfDetailSwitchingDistanceL23",
+      "DFIntCSGLevelOfDetailSwitchingDistanceL34"
+    ],
+    "Rendering": [
+      "FFlagHandleAltEnterFullscreenManually",
+      "DFFlagTextureQualityOverrideEnabled",
+      "DFIntTextureQualityOverride",
+      "FIntDebugForceMSAASamples",
+      "DFFlagDisableDPIScale",
+      "FFlagDebugGraphicsPreferD3D11",
+      "FFlagDebugSkyGray",
+      "DFFlagDebugPauseVoxelizer",
+      "DFIntDebugFRMQualityLevelOverride",
+      "FIntFRMMaxGrassDistance",
+      "FIntFRMMinGrassDistance",
+      "FFlagDebugGraphicsPreferVulkan",
+      "FFlagDebugGraphicsPreferOpenGL"
+    ],
+    "User Interface": [
+      "FIntGrassMovementReducedMotionFactor"
+    ]
+  }
+}

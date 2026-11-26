@@ -1,0 +1,52 @@
+# Copyright 2026 Elixir Project Authors
+# Licensed under the Apache License, Version 2.0
+{
+  global:
+    regcomp; regerror; regexec; regfree;
+    fnmatch;
+    glob; globfree;
+    getopt; getopt_long; getopt_long_only;
+    optarg; opterr; optind; optopt; optreset;
+    tsearch; tfind; tdelete; twalk; tdestroy;
+    hcreate; hdestroy; hsearch; hcreate_r; hdestroy_r; hsearch_r;
+    insque; remque;
+    err; errx; warn; warnx; verr; verrx; vwarn; vwarnx;
+    error; error_at_line; error_message_count; error_one_per_line; error_print_progname;
+    fts_open; fts_read; fts_children; fts_set; fts_close;
+    ftw; ftw64; nftw; nftw64;
+    swab; getsubopt; lockf; lockf64;
+    ether_aton; ether_aton_r; ether_ntoa; ether_ntoa_r;
+    cfgetispeed; cfgetospeed; cfsetispeed; cfsetospeed; cfsetspeed; cfmakeraw;
+    tcgetattr; tcsetattr; tcdrain; tcflow; tcflush; tcsendbreak;
+    tcgetpgrp; tcsetpgrp; tcgetsid; tcgetwinsize; tcsetwinsize;
+    setmntent; getmntent; getmntent_r; endmntent; hasmntopt;
+    backtrace; backtrace_symbols; backtrace_symbols_fd;
+    __b64_ntop; __b64_pton; inet_nsap_addr; inet_nsap_ntoa;
+    __dn_comp; __dn_count_labels; __dn_skipname;
+    __putlong; __putshort; _getlong; _getshort;
+    __res_dnok; __res_hnok; __res_mailok; __res_ownok;
+    __loc_aton; __loc_ntoa;
+    __p_cdname; __p_cdnname; __p_class; __p_class_syms; __p_fqname; __p_fqnname;
+    __p_option; __p_rcode; __p_secstodate; __p_time; __p_type; __p_type_syms;
+    __sym_ntop; __sym_ntos; __sym_ston;
+    ns_format_ttl; ns_get16; ns_get32; ns_initparse; ns_makecanon; ns_msg_getflag;
+    ns_name_compress; ns_name_ntol; ns_name_ntop; ns_name_pack; ns_name_pton;
+    ns_name_rollback; ns_name_skip; ns_name_uncompress; ns_name_unpack;
+    ns_parserr; ns_put16; ns_put32; ns_samename; ns_skiprr; ns_sprintrr; ns_sprintrrf;
+    dn_expand; res_init; res_mkquery; res_query; res_search;
+    __res_close; __res_hostalias; __res_isourserver; __res_nameinquery; __res_nclose;
+    __res_ninit; __res_nmkquery; __res_nquery; __res_nquerydomain; __res_nsearch;
+    __res_nsend; __res_queriesmatch; __res_querydomain; __res_randomid; __res_send;
+    __res_send_setqhook; __res_send_setrhook;
+    __fp_nquery; __fp_query; __p_query; __hostalias;
+    _resolv_delete_cache_for_net; _resolv_flush_cache_for_net; _resolv_set_nameservers_for_net;
+    nsdispatch;
+    _Unwind_Backtrace; _Unwind_DeleteException; _Unwind_FindEnclosingFunction;
+    _Unwind_Find_FDE; _Unwind_ForcedUnwind; _Unwind_GetCFA; _Unwind_GetDataRelBase;
+    _Unwind_GetGR; _Unwind_GetIP; _Unwind_GetIPInfo; _Unwind_GetLanguageSpecificData;
+    _Unwind_GetRegionStart; _Unwind_GetTextRelBase; _Unwind_RaiseException;
+    _Unwind_Resume; _Unwind_Resume_or_Rethrow; _Unwind_SetGR; _Unwind_SetIP;
+    __register_frame; __deregister_frame;
+  local:
+    *;
+};

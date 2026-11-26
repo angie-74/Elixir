@@ -1,0 +1,43 @@
+// Copyright 2026 Elixir Project Authors
+// Licensed under the Apache License, Version 2.0
+#ifndef ELIXIR_SDL3_COMPAT_SDL_KEYCODE_H_
+#define ELIXIR_SDL3_COMPAT_SDL_KEYCODE_H_
+
+#include <stdint.h>
+
+#include "SDL3/SDL_scancode.h"
+
+typedef uint32_t SDL_Keycode;
+typedef uint16_t SDL_Keymod;
+
+#define SDLK_SCANCODE_MASK (1u << 30)
+#define SDL_SCANCODE_TO_KEYCODE(X) ((SDL_Keycode)(X) | SDLK_SCANCODE_MASK)
+
+#define SDLK_UNKNOWN 0x00000000u
+#define SDLK_RETURN 0x0000000du
+#define SDLK_ESCAPE 0x0000001bu
+#define SDLK_BACKSPACE 0x00000008u
+#define SDLK_TAB 0x00000009u
+#define SDLK_SPACE 0x00000020u
+#define SDLK_DELETE 0x0000007fu
+
+#define SDL_KMOD_NONE 0x0000u
+#define SDL_KMOD_LSHIFT 0x0001u
+#define SDL_KMOD_RSHIFT 0x0002u
+#define SDL_KMOD_LEVEL5 0x0004u
+#define SDL_KMOD_LCTRL 0x0040u
+#define SDL_KMOD_RCTRL 0x0080u
+#define SDL_KMOD_LALT 0x0100u
+#define SDL_KMOD_RALT 0x0200u
+#define SDL_KMOD_LGUI 0x0400u
+#define SDL_KMOD_RGUI 0x0800u
+#define SDL_KMOD_NUM 0x1000u
+#define SDL_KMOD_CAPS 0x2000u
+#define SDL_KMOD_MODE 0x4000u
+#define SDL_KMOD_SCROLL 0x8000u
+#define SDL_KMOD_CTRL (SDL_KMOD_LCTRL | SDL_KMOD_RCTRL)
+#define SDL_KMOD_SHIFT (SDL_KMOD_LSHIFT | SDL_KMOD_RSHIFT)
+#define SDL_KMOD_ALT (SDL_KMOD_LALT | SDL_KMOD_RALT)
+#define SDL_KMOD_GUI (SDL_KMOD_LGUI | SDL_KMOD_RGUI)
+
+#endif

@@ -1,0 +1,511 @@
+Third-party notices
+===================
+
+Elixir is licensed under the Apache License 2.0 (see LICENSE). It includes
+or derives from the components below, each under its own license.
+
+Mocktail
+--------
+
+- Source: https://github.com/komaruworld/mocktail (the codebase Elixir is built on)
+- License: Apache License 2.0
+- Some Mocktail files carry the note "Includes changes by vii from
+  CoderDayton/nightcap"; those notices are preserved in the files.
+
+AssetStudio Texture2DDecoderNative (ETC1 block decoder)
+-------------------------------------------------------
+
+- Mocktail's ETC1 sky-texture transcoder,
+  src/libc_shim/vulkan_etc1_sky_transcoder.cc, contains an ETC1 block
+  decoder (DecodeEtc1RgbBlock) adapted from AssetStudio's
+  Texture2DDecoderNative.
+- License: MIT, Copyright (c) 2016 Radu and (c) 2016-2020 Perfare.
+- On Windows the file is compiled into elixir_android
+  (cmake/ElixirAndroid.cmake, the Android framework libraries, whose asset
+  manager transcodes sky textures for direct Vulkan as Mocktail's does), and
+  so into every binary that links it.
+- The notice as the source file carries it (the repository holds no other
+  copy of AssetStudio's license):
+
+    ETC decoder adapted from AssetStudio's Texture2DDecoderNative.
+    MIT License. Copyright (c) 2016 Radu and (c) 2016-2020 Perfare.
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to
+    deal in the Software without restriction, including without limitation the
+    rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+    sell copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to inclusion of this notice. THE SOFTWARE IS
+    PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.
+
+mcpelauncher-linker (third_party/mcpelauncher-linker)
+-----------------------------------------------------
+
+- License: MIT, Copyright (c) 2024 ChristopherHX and MCMrARM (LICENSE in that directory)
+- Contains AOSP bionic linker and AOSP core (libbase, liblog, libziparchive)
+  sources under the BSD and Apache-2.0 licenses; see
+  third_party/mcpelauncher-linker/bionic/linker/NOTICE and
+  third_party/mcpelauncher-linker/core/NOTICE.
+- Elixir's Windows modifications are marked Elixir / #if defined(_WIN32).
+
+libjnivm (third_party/libjnivm), JNI headers (third_party/jni)
+--------------------------------------------------------------
+
+- libjnivm: see its LICENSE file.
+- jni.h / jni_md.h: GPLv2 with the Classpath Exception (third_party/jni/LICENSE,
+  ASSEMBLY_EXCEPTION); used as headers only.
+
+Vulkan-Headers (third_party/Vulkan-Headers)
+-------------------------------------------
+
+- License: Apache-2.0 / MIT (Khronos)
+
+ANGLE headers (third_party/angle_headers)
+-----------------------------------------
+
+- License: BSD-3-Clause (The ANGLE Project Authors)
+
+SDL3 constants (src/window/sdl3_compat)
+---------------------------------------
+
+- src/window/sdl3_compat/SDL3/SDL_scancode.h, SDL_keycode.h,
+  SDL_mouse.h and SDL_gamepad.h are Elixir's own headers (Apache-2.0).
+  They reproduce only the names and numeric values of the SDL3 public
+  constants that Mocktail's portable input code uses: scancodes (the USB HID
+  Keyboard/Keypad usage IDs), keycodes and key modifiers, mouse buttons, and
+  gamepad buttons and axes. That code therefore builds unchanged on Windows.
+  The headers declare no functions and contain no SDL code or documentation
+  text.
+- SDL is distributed under the zlib license. Elixir's Windows build does not
+  use or link SDL, so no SDL source or license file is part of this
+  repository.
+
+Android Open Source Project (bionic)
+------------------------------------
+
+- references/platform_bionic is consulted for ABI facts. Generated files
+  src/bionic/guest_constants.h and src/bionic/guest_layout.h record
+  numeric values and structure layouts computed from the Android NDK's bionic
+  headers (BSD/Apache-2.0).
+- Code adapted from bionic carries its original copyright notice.
+
+The guest libc extension (guest/libc_ext)
+-----------------------------------------
+
+Bionic sources compiled into libelixir_libc_ext.so, copied from
+references/platform_bionic/libc with their notices; guest/libc_ext/NOTICE
+is bionic libc's complete notice file. The resolver files added for the DNS
+resolver:
+
+- dns/resolv/res_init.c, res_send.c, res_query.c, res_mkquery.c:
+  BSD, The Regents of the University of California; Digital Equipment
+  Corporation; Internet Systems Consortium / Internet Software Consortium
+  (ISC license). res_send.c carries an Elixir change.
+- dns/resolv/res_data.cpp, res_debug.h,
+  upstream-netbsd/lib/libc/isc/ev_timers.c, ev_streams.c,
+  eventlib_p.h, upstream-netbsd/lib/libc/include/isc/eventlib.h,
+  heap.h, list.h, memcluster.h: ISC license (Internet Systems
+  Consortium, Internet Software Consortium).
+- dns/resolv/res_state.c, res_cache.c (both with Elixir changes),
+  dns/include/resolv_cache.h, resolv_netid.h,
+  async_safe/include/async_safe/log.h: BSD, The Android Open Source Project.
+- dns/resolv/res_private.h (NetBSD) and
+  upstream-netbsd/android/include/fd_setsize.h (AOSP, one include line)
+  carry no license text of their own; they are covered by bionic's NOTICE.
+- dns/resolv/res_stats.c: Apache License 2.0, The Android Open Source
+  Project.
+- dns/net/nsdispatch.c, dns/include/nsswitch.h: BSD, The NetBSD
+  Foundation; Networks Associates Technology (nsdispatch.c).
+- upstream-openbsd/lib/libc/net/res_random.c: BSD, Niels Provos and Damien
+  Miller.
+- private/thread_private.h: public domain (OpenBSD).
+- private/android_filesystem_config.h is Elixir's own (one constant,
+  AOSP's AID_DNS value).
+
+Android Compatibility Layer (reference)
+---------------------------------------
+
+- Source: https://github.com/reveny/Android-Compatibility-Layer
+- License: MIT, Copyright (c) 2026 Reveny
+- Files that adapt ACL code say so in their header.
+
+libhybris (reference)
+---------------------
+
+- Source: https://github.com/libhybris/libhybris
+- Only Apache-2.0-licensed files (for example hybris/common/hooks.c) may be
+  adapted; their copyright headers are kept in derived files. LGPL/GPL files
+  are not used.
+
+android-loader (reference only)
+-------------------------------
+
+- Source: https://github.com/Dadoum/android-loader
+- The repository has no license. No code is copied from it; it was consulted
+  as a design reference only.
+
+Lucide (Elixir icon)
+--------------------
+
+The flask in assets/branding/elixir-icon.svg and elixir-logo.svg is
+adapted from Lucide's flask-round icon (https://lucide.dev/icons/flask-round).
+
+    ISC License
+
+    Copyright (c) 2026 Lucide Icons and Contributors
+
+    Permission to use, copy, modify, and/or distribute this software for any
+    purpose with or without fee is hereby granted, provided that the above
+    copyright notice and this permission notice appear in all copies.
+
+    THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+    WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+    MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+    ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+    WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+    ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+    OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+Fishstrap and Bloxstrap (design reference)
+------------------------------------------
+
+- Sources: https://github.com/fishstrap/fishstrap (studied at commit
+  33225bab77b8743c3191eaaf906443445068d235, read-only in
+  references/fishstrap), a fork of https://github.com/bloxstraplabs/bloxstrap
+- License: MIT (both notices below)
+- The launcher's Fast Flags, Roblox settings, Integrations and cache-cleaner
+  features follow their design, and Elixir implements the BloxstrapRPC
+  protocol they defined. No C# code was
+  copied; Elixir's code and UI text are its own. Facts taken from Fishstrap:
+  the UserGameSettings property names its settings editor edits
+  (FramerateCap, SavedQualityLevel, MouseSensitivity,
+  PreferredTransparency, ReducedMotion, PreferredTextSize), the
+  BloxstrapRPC message format and its limits, and the RoValra geolocation
+  endpoint. The Mods, Shortcuts and About pages follow theirs as well: the
+  Mods folder and the custom font preset are Bloxstrap's design (the page's
+  Help button opens https://bloxstraplabs.com/wiki/features/modding/), and
+  Elixir serves the files while Roblox runs instead of copying them into the
+  installation. The window shown while Roblox starts has the layout of
+  Fishstrap's default bootstrapper dialog (FluentDialog.xaml).
+
+    MIT License
+
+    Copyright (c) 2025 returnrqt
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+Bloxstrap: the same MIT terms, Copyright (c) 2022 pizzaboxer
+(references/fishstrap/LICENSE.Bloxstrap).
+
+discord-rpc-csharp (translated to C++)
+--------------------------------------
+
+- Source: https://github.com/Lachee/discord-rpc-csharp, version 1.6.1 (the
+  NuGet package DiscordRichPresence 1.6.1.70)
+- License: MIT (notice below; also src/discord_rpc/LICENSE)
+- The library Bloxstrap and Fishstrap use for Discord Rich Presence. It is
+  C#, which Elixir's C++ runtime cannot load, so src/discord_rpc is a
+  translation of it to C++, made by hand for Elixir on 2026-11-26
+  (src/discord_rpc/README.md lists what differs from the original).
+  Elixir's Rich Presence (src/elixir_runtime/discord_presence.cc) uses that
+  translation. The library's own binaries are not part of Elixir; a
+  recording of what they do (tests/windows/discord_rpc) is what the
+  translation is tested against.
+
+    MIT License
+
+    Copyright (c) 2021 Lachee
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+WPF UI (the look of Fishstrap's sliders)
+----------------------------------------
+
+- Source: https://github.com/fishstrap/wpfui at commit
+  f869a7d23b47b47679e21f621ea3ec43b34ff6ea (the fork of
+  https://github.com/lepoco/wpfui that Fishstrap builds with), read
+  2026-11-25: src/Wpf.Ui/Styles/Controls/Slider.xaml and
+  src/Wpf.Ui/Styles/Theme/Dark.xaml
+- License: MIT (notice below)
+- The launcher's slider uses measurements and dark track tones based on
+  WPF UI's Slider style (launcher/ui/ui.cc, launcher/ui/theme.h).
+
+    MIT License
+
+    Copyright (c) 2021-2022 Leszek Pomianowski and WPF UI Contributors. https://dev.lepo.co/
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+Cordial (findings only, no code)
+--------------------------------
+
+- Source: https://github.com/luohoa97/cordial (GPL-3.0), its CHANGELOG.md,
+  docs/HANDOVER.md, docs/analysis/flag-init.md and release notes, read
+  2026-11-25
+- Cordial runs the same Android client on Linux. What its notes report (which
+  app-bridge calls the Android app makes, what a healthy start-up logs, how
+  its disconnect 304 behaved) was checked against Elixir's own logs and the
+  app's dex. Elixir contains none of Cordial's
+  code: GPL-3.0 code cannot be combined into this Apache-2.0 project.
+
+Vecteezy package artwork
+------------------------
+
+The Roblox download list uses the supplied Vecteezy artwork “Box package with
+transparent tape on top and up arrow icon,” asset 20230752. The original SVG
+is included at launcher/assets/roblox-download-package.svg.
+
+Lucide (icons)
+--------------
+
+- Source: https://github.com/lucide-icons/lucide (icons/*.svg on main,
+  read 2026-11-24)
+- License: ISC; the icons Lucide lists as derived from Feather are also under
+  Feather's MIT license (both notices below)
+- The launcher draws 43 Lucide icons. Their SVG markup is copied unchanged
+  into launcher/ui/lucide.cc, where each entry names its icon, and drawn as
+  Direct2D geometry. Of these, arrow-left, check, chevron-down,
+  chevron-right, download, external-link, info, link, monitor, plus, search,
+  square, trash and x are among the Feather-derived icons.
+
+    ISC License
+
+    Copyright (c) 2026 Lucide Icons and Contributors
+
+    Permission to use, copy, modify, and/or distribute this software for any
+    purpose with or without fee is hereby granted, provided that the above
+    copyright notice and this permission notice appear in all copies.
+
+    THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+    WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+    MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+    ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+    WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+    ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+    OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+    The MIT License (MIT) (for the icons Lucide lists as derived from Feather)
+
+    Copyright (c) 2013-present Cole Bemis
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+utf8proc 2.9.0 (fetched at build time)
+--------------------------------------
+
+- Fetched by cmake/ElixirWindowInput.cmake from
+  https://github.com/JuliaStrings/utf8proc/archive/refs/tags/v2.9.0.tar.gz,
+  pinned to SHA-256
+  18c1626e9fc5a2e192311e36b3010bfc698078f692888940f1fa150547abb0c1.
+- Only utf8proc.c is compiled (it includes the Unicode tables in
+  utf8proc_data.c), into the static library elixir_utf8proc.
+  elixir_input_runtime links it for the grapheme iteration of Mocktail's
+  text editor (src/runtime/roblox_text_editor.cc).
+- License: MIT ("expat") for utf8proc; the Unicode, Inc. data license for the
+  data in utf8proc_data.c. The archive's LICENSE.md:
+
+    ## utf8proc license ##
+
+    **utf8proc** is a software package originally developed
+    by Jan Behrens and the rest of the Public Software Group, who
+    deserve nearly all of the credit for this library, that is now maintained by the Julia-language developers.  Like the original utf8proc,
+    whose copyright and license statements are reproduced below, all new
+    work on the utf8proc library is licensed under the [MIT "expat"
+    license](http://opensource.org/licenses/MIT):
+
+    *Copyright &copy; 2014-2021 by Steven G. Johnson, Jiahao Chen, Tony Kelman, Jonas Fonseca, and other contributors listed in the git history.*
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+
+    ## Original utf8proc license ##
+
+    *Copyright (c) 2009, 2013 Public Software Group e. V., Berlin, Germany*
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+
+    ## Unicode data license ##
+
+    This software contains data (`utf8proc_data.c`) derived from processing
+    the Unicode data files. The following license applies to that data:
+
+    **COPYRIGHT AND PERMISSION NOTICE**
+
+    *Copyright (c) 1991-2007 Unicode, Inc. All rights reserved. Distributed
+    under the Terms of Use in http://www.unicode.org/copyright.html.*
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of the Unicode data files and any associated documentation (the "Data
+    Files") or Unicode software and any associated documentation (the
+    "Software") to deal in the Data Files or Software without restriction,
+    including without limitation the rights to use, copy, modify, merge,
+    publish, distribute, and/or sell copies of the Data Files or Software, and
+    to permit persons to whom the Data Files or Software are furnished to do
+    so, provided that (a) the above copyright notice(s) and this permission
+    notice appear with all copies of the Data Files or Software, (b) both the
+    above copyright notice(s) and this permission notice appear in associated
+    documentation, and (c) there is clear notice in each modified Data File or
+    in the Software as well as in the documentation associated with the Data
+    File(s) or Software that the data or software has been modified.
+
+    THE DATA FILES AND SOFTWARE ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+    KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF
+    THIRD PARTY RIGHTS. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR HOLDERS
+    INCLUDED IN THIS NOTICE BE LIABLE FOR ANY CLAIM, OR ANY SPECIAL INDIRECT OR
+    CONSEQUENTIAL DAMAGES, OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF
+    USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+    TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+    PERFORMANCE OF THE DATA FILES OR SOFTWARE.
+
+    Except as contained in this notice, the name of a copyright holder shall
+    not be used in advertising or otherwise to promote the sale, use or other
+    dealings in these Data Files or Software without prior written
+    authorization of the copyright holder.
+
+    Unicode and the Unicode logo are trademarks of Unicode, Inc., and may be
+    registered in some jurisdictions. All other trademarks and registered
+    trademarks mentioned herein are the property of their respective owners.
+
+Microsoft Edge WebView2 SDK
+---------------------------
+
+The window that shows Roblox web pages uses Microsoft Edge WebView2. The
+build takes WebView2.h and the static loader from the NuGet package
+Microsoft.Web.WebView2 1.0.4370.26 (cmake/ElixirWebView.cmake), and the
+loader is part of Elixir.exe. Its license:
+
+    Copyright (C) Microsoft Corporation. All rights reserved.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are
+    met:
+
+       * Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+       * Redistributions in binary form must reproduce the above
+    copyright notice, this list of conditions and the following disclaimer
+    in the documentation and/or other materials provided with the
+    distribution.
+       * The name of Microsoft Corporation, or the names of its contributors
+    may not be used to endorse or promote products derived from this
+    software without specific prior written permission.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+    A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+    OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Fetched at build time
+---------------------
+
+- GoogleTest (BSD-3-Clause), tests only
+- zlib 1.3.1 (zlib license), including its contrib/minizip (zlib license,
+  Gilles Vollant and Mathias Svensson), the ZIP reader of the APK pipeline;
+  zlib also inflates APK assets for the Android framework libraries
+  (src/android/assets.cc)
+- nlohmann/json 3.11.3 (MIT), payload and catalog metadata; also used by the
+  runtime (cmake/ElixirRuntime.cmake) and the window state store
+  (cmake/ElixirWindowInput.cmake)
+- utf8proc 2.9.0 (MIT; Unicode data license), see the utf8proc section above

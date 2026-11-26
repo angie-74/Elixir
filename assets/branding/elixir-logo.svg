@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="886" height="320" viewBox="0 0 886 320"
+  role="img" aria-labelledby="logo-title logo-desc">
+  <title id="logo-title">Elixir</title>
+  <desc id="logo-desc">A violet badge with a white potion flask next to the Elixir wordmark.</desc>
+  <!-- Flask outline adapted from Lucide flask-round:
+  https://lucide.dev/icons/flask-round
+  ISC License
+
+Copyright (c) 2026 Lucide Icons and Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+  -->
+  <defs>
+    <linearGradient id="tile-gradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8156ED"/>
+      <stop offset=".48" stop-color="#532AB8"/>
+      <stop offset="1" stop-color="#271664"/>
+    </linearGradient>
+    <radialGradient id="tile-light" cx=".25" cy=".14" r=".76">
+      <stop offset="0" stop-color="#E3B5FF" stop-opacity=".47"/>
+      <stop offset="1" stop-color="#C49BFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="tile-edge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F1DAFF" stop-opacity=".58"/>
+      <stop offset="1" stop-color="#855EFF" stop-opacity=".18"/>
+    </linearGradient>
+  </defs>
+  <g id="elixir-badge" transform="translate(160 160) rotate(12)">
+    <rect id="badge-base" x="-126" y="-126" width="252" height="252" rx="43"
+          fill="url(#tile-gradient)"/>
+    <rect id="badge-highlight" x="-126" y="-126" width="252" height="252" rx="43"
+          fill="url(#tile-light)"/>
+    <rect id="badge-rim" x="-125" y="-125" width="250" height="250" rx="42"
+          fill="none" stroke="url(#tile-edge)" stroke-width="2"/>
+    <g id="flask" transform="translate(-89 -86) scale(7.42)">
+      <path id="flask-silhouette" fill="#FFFFFF" fill-rule="evenodd"
+        d="M8.5 1.05h7a.95.95 0 0 1 0 1.9h-.55v4.66
+           a7.95 7.95 0 1 1-5.9 0V2.95H8.5a.95.95 0 0 1 0-1.9Z"/>
+    </g>
+  </g>
+  <g id="wordmark" aria-label="Elixir" fill="#FFFFFF"
+    transform="translate(337.541 240.555) scale(0.221 -0.221)">
+    <path id="letter-1-E" transform="translate(0 0)" d="M229 314H578V439H229V604H606V729H79V0H624V125H229Z"/>
+    <path id="letter-2-l" transform="translate(654 0)" d="M207 729H67V0H207Z"/>
+    <path id="letter-3-i" transform="translate(919 0)" d="M207 540H67V0H207ZM207 729H67V604H207Z"/>
+    <path id="letter-4-x" transform="translate(1184 0)" d="M355 272 531 540H363L276 377L188 540H20L196 272L16 0H184L276 168L367 0H535Z"/>
+    <path id="letter-5-i" transform="translate(1727 0)" d="M207 540H67V0H207ZM207 729H67V604H207Z"/>
+    <path id="letter-6-r" transform="translate(1992 0)" d="M63 540V0H203V287C203 369 244 410 326 410C341 410 351 409 370 406V548C362 549 359 549 353 549C289 549 234 507 203 434V540Z"/>
+  </g>
+</svg>

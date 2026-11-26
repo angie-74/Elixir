@@ -1,0 +1,4 @@
+* text=auto eol=lf
+*.png binary
+third_party/mcpelauncher-linker/core/** -whitespace
+launcher/assets/roblox-download-package.svg -text
