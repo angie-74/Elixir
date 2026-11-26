@@ -62,6 +62,7 @@ void WindowPointerCaptureOwner::ClearQuery() {
 
 bool WindowPointerCaptureOwner::Pump(bool text_input_active) {
   if (!focused_) {
+    native_lock_active_ = false;
     return Apply(false, true, PointerReleasePosition::kUnchanged);
   }
   MouseLockQueryCallback callback = nullptr;
@@ -98,6 +99,7 @@ bool WindowPointerCaptureOwner::Pump(bool text_input_active) {
     condition_.notify_all();
   }
   const bool native_lock_active = query_ok && locked_center;
+  native_lock_active_ = native_lock_active;
   const bool right_drag_active = right_button_held_ && !text_input_active;
   const bool capture_requested = native_lock_active || right_drag_active;
   if (!captured_ && capture_requested) {
@@ -153,6 +155,7 @@ bool WindowPointerCaptureOwner::OnFocusLost() {
   right_button_held_ = false;
   right_drag_anchor_.reset();
   shift_key_pressed_during_right_drag_ = false;
+  native_lock_active_ = false;
   return Apply(false, true, PointerReleasePosition::kUnchanged);
 }
 

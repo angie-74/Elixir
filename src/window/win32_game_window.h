@@ -52,6 +52,7 @@ bool AltEnterFullscreenFromFlags(const elixir::fflags::FlagSet& effective);
 struct CursorOps {
   std::function<bool(const RECT* screen_rect)> clip_cursor;
   std::function<bool(int screen_x, int screen_y)> set_cursor_pos;
+  std::function<bool(POINT* screen)> get_cursor_pos;
 };
 
 struct GameWindowOptions {
@@ -136,6 +137,7 @@ class Win32PointerCaptureBackend final
   bool Apply(const mocktail::window::PointerCaptureRequest& request) override;
 
   bool relative_mode() const { return relative_mode_; }
+  const std::optional<mocktail::window::PointerPosition>& drag_start() const { return drag_start_; }
   bool cursor_hidden() const { return cursor_hidden_; }
   bool clip_applied() const { return clip_applied_; }
   void Reassert();
@@ -235,9 +237,16 @@ class GameWindow final {
 
   void Emit(mocktail::platform::PlatformEventPayload payload);
   void EmitMotion(const mocktail::platform::MouseMotionEvent& motion);
-  void BeginRelativeMotion(const std::optional<mocktail::window::PointerPosition>& from);
-  void ForgetRelativePosition();
-  void RecenterCapturedCursor(bool force);
+  void BeginRelativeMotion();
+  void ResumeRelativeMotion();
+  void EndRelativeMotion();
+  void SampleCapturedCursor();
+  void ParkCapturedCursor(bool exactly);
+  bool CursorClientPosition(POINT* client);
+  bool RelativeMotionFollowsMouseLock() const;
+  mocktail::window::PointerPosition RelativePin() const;
+  POINT RelativeHome() const;
+  LONG RelativeReach() const;
   void FlushMotion();
   void PushHostEvent(HostWindowEventType type);
   bool AttachMicrophoneSystemMenu();
@@ -307,10 +316,18 @@ class GameWindow final {
   float cursor_x_ = 0.0F;
   float cursor_y_ = 0.0F;
   std::uint32_t buttons_down_ = 0;
-  bool has_relative_position_ = false;
-  float relative_x_ = 0.0F;
-  float relative_y_ = 0.0F;
-  bool recenter_pending_ = false;
+  bool relative_tracking_ = false;
+  POINT relative_last_{};
+  bool resync_cursor_position_ = false;
+  std::uint64_t capture_started_ns_ = 0;
+  bool capture_follows_lock_ = false;
+  std::uint32_t capture_moves_ = 0;
+  float capture_travel_ = 0.0F;
+  float capture_largest_step_ = 0.0F;
+  float capture_last_step_ = 0.0F;
+  bool report_next_absolute_step_ = false;
+  std::uint32_t capture_resets_ = 0;
+  std::uint32_t capture_refused_resets_ = 0;
   mocktail::platform::PlatformEvent pending_motion_{};
   bool has_pending_motion_ = false;
 

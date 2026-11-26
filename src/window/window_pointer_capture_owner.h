@@ -55,6 +55,7 @@ class WindowPointerCaptureOwner final {
 
   bool captured() const { return captured_; }
   bool cursor_visible() const { return cursor_visible_; }
+  bool native_lock_active() const { return native_lock_active_; }
 
  private:
   bool Apply(bool capture, bool cursor_visible,
@@ -72,6 +73,7 @@ class WindowPointerCaptureOwner final {
   std::optional<PointerPosition> right_drag_anchor_;
   PointerReleasePosition release_position_ = PointerReleasePosition::kUnchanged;
   bool shift_key_pressed_during_right_drag_ = false;
+  bool native_lock_active_ = false;
   bool captured_ = false;
   bool cursor_visible_ = true;
   bool state_valid_ = true;

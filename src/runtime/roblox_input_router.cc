@@ -570,23 +570,13 @@ RobloxInputDispatchResult RobloxInputRouter::HandleMouseMotionLocked(
   const float delta_x = transform.HostLogicalToGuestX(event.delta_x);
   const float delta_y = transform.HostLogicalToGuestY(event.delta_y);
 
-  if (event.relative_mode) {
-    mouse_x_ += delta_x;
-    mouse_y_ += delta_y;
-  } else {
-    mouse_x_ = transform.HostLogicalToGuestX(event.x);
-    mouse_y_ = transform.HostLogicalToGuestY(event.y);
-  }
   const float max_x = std::max(0.0F, transform.guest_width() - 1.0F);
   const float max_y = std::max(0.0F, transform.guest_height() - 1.0F);
-  const float clamped_x = std::clamp(mouse_x_, 0.0f, max_x);
-  const float clamped_y = std::clamp(mouse_y_, 0.0f, max_y);
+  mouse_x_ = std::clamp(transform.HostLogicalToGuestX(event.x), 0.0f, max_x);
+  mouse_y_ = std::clamp(transform.HostLogicalToGuestY(event.y), 0.0f, max_y);
 
   return NativeResultLocked(
-      sink_.mouse_move(sink_.context,
-                       event.relative_mode ? mouse_x_ : clamped_x,
-                       event.relative_mode ? mouse_y_ : clamped_y,
-                       delta_x, delta_y),
+      sink_.mouse_move(sink_.context, mouse_x_, mouse_y_, delta_x, delta_y),
       RobloxInputEventKind::kMouseMotion);
 }
 
@@ -605,15 +595,11 @@ RobloxInputDispatchResult RobloxInputRouter::HandleMouseButtonLocked(
   }
   const platform::SurfaceCoordinateTransform transform =
       CoordinateTransform(snapshot_.viewport);
-  if (!event.relative_mode) {
-    mouse_x_ = transform.HostLogicalToGuestX(event.x);
-    mouse_y_ = transform.HostLogicalToGuestY(event.y);
-  }
   const float max_x = std::max(0.0F, transform.guest_width() - 1.0F);
   const float max_y = std::max(0.0F, transform.guest_height() - 1.0F);
-  const float clamped_x = std::clamp(mouse_x_, 0.0f, max_x);
-  const float clamped_y = std::clamp(mouse_y_, 0.0f, max_y);
-  Status status = sink_.mouse_button(sink_.context, clamped_x, clamped_y,
+  mouse_x_ = std::clamp(transform.HostLogicalToGuestX(event.x), 0.0f, max_x);
+  mouse_y_ = std::clamp(transform.HostLogicalToGuestY(event.y), 0.0f, max_y);
+  Status status = sink_.mouse_button(sink_.context, mouse_x_, mouse_y_,
                                      event.pressed, roblox_button);
   if (status.ok()) {
     const auto active = std::find(active_mouse_buttons_.begin(),
