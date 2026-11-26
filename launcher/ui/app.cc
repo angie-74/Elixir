@@ -297,7 +297,7 @@ void App::StartLauncherServices() {
   RefreshAudioDevices();
   RefreshCrashLogs();
   if (page_ == Page::kFastFlags) LoadFastFlags(true);
-  if (page_ == Page::kGlobalSettings || page_ == Page::kFastFlags) RefreshGlobalSettings();
+  if (page_ == Page::kGlobalSettings) RefreshGlobalSettings();
   if (page_ == Page::kSettings) MeasureCaches();
   if (page_ == Page::kMods) RefreshMods();
   if (page_ == Page::kShortcuts) RefreshShortcuts();
@@ -550,7 +550,7 @@ LRESULT App::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) {
       if (LOWORD(wparam) != WA_INACTIVE) {
         if (page_ == Page::kCrashLogs) RefreshCrashLogs();
         if (page_ == Page::kFastFlags) LoadFastFlags(false);
-        if (page_ == Page::kGlobalSettings || page_ == Page::kFastFlags) RefreshGlobalSettings();
+        if (page_ == Page::kGlobalSettings) RefreshGlobalSettings();
         if (page_ == Page::kSettings) MeasureCaches();
         if (page_ == Page::kMods) RefreshMods();
         if (page_ == Page::kShortcuts) RefreshShortcuts();
@@ -1322,7 +1322,7 @@ void App::OnKeyDown(WPARAM key) {
         MeasureCaches();
       }
       if (page_ == Page::kFastFlags) LoadFastFlags(false);
-      if (page_ == Page::kGlobalSettings || page_ == Page::kFastFlags) RefreshGlobalSettings();
+      if (page_ == Page::kGlobalSettings) RefreshGlobalSettings();
       if (page_ == Page::kMods) RefreshMods();
       if (page_ == Page::kShortcuts) RefreshShortcuts();
       Invalidate();
@@ -1404,7 +1404,7 @@ void App::Navigate(Page page) {
     if (page == Page::kCrashLogs) RefreshCrashLogs();
     if (page == Page::kSettings) MeasureCaches();
     if (page == Page::kFastFlags) LoadFastFlags(false);
-    if (page == Page::kGlobalSettings || page == Page::kFastFlags) RefreshGlobalSettings();
+    if (page == Page::kGlobalSettings) RefreshGlobalSettings();
     if (page == Page::kMods) RefreshMods();
     if (page == Page::kShortcuts) RefreshShortcuts();
     if (page == Page::kUpdates && releases_.stage == ReleaseHistory::Stage::kIdle) CheckForUpdates();
@@ -2036,7 +2036,7 @@ void App::OnRuntimeExited(DWORD exit_code) {
     runtime_.process = nullptr;
   }
   RefreshCrashLogs();
-  if (page_ == Page::kGlobalSettings || page_ == Page::kFastFlags) RefreshGlobalSettings();
+  if (page_ == Page::kGlobalSettings) RefreshGlobalSettings();
   if (page_ == Page::kSettings) MeasureCaches();
   if (exit_code != 0 && !stopped) {
     Overlay overlay;

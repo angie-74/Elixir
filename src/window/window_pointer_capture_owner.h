@@ -55,7 +55,6 @@ class WindowPointerCaptureOwner final {
 
   bool captured() const { return captured_; }
   bool cursor_visible() const { return cursor_visible_; }
-  PointerReleasePosition release_position() const { return release_position_; }
 
  private:
   bool Apply(bool capture, bool cursor_visible,

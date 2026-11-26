@@ -268,7 +268,6 @@ bool GameSession::Open(const GameSessionOptions& options, std::string* error) {
   window_options.title = options.title;
   window_options.start_hidden = true;
   window_options.offscreen = options.offscreen;
-  window_options.raw_mouse = options.raw_mouse;
   window_options.state_path = options.state_path;
   auto created = std::make_unique<window::GameWindow>();
   const mocktail::Status status = created->Create(window_options);

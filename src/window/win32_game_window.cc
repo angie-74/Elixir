@@ -35,7 +35,6 @@ constexpr COLORREF kBackgroundColor = RGB(18, 18, 18);
 constexpr int kOffscreenOrigin = -20000;
 constexpr std::uint64_t kPersistDelayNs = 1'000'000'000ULL;
 constexpr int kMinimumVisibleRestoreExtent = 64;
-constexpr int kMaximumAbsoluteJump = 32;
 constexpr UINT kMicrophoneCommandFirst = 0x2000;
 constexpr UINT kMicrophoneCommandStride = 16;
 constexpr std::size_t kMaximumMicrophoneItems = 128;
@@ -218,39 +217,6 @@ const char* HostWindowEventTypeName(HostWindowEventType type) {
   return "Unknown";
 }
 
-bool RawAbsoluteToRelative(RawAbsoluteMotion* state, LONG raw_x, LONG raw_y, int width,
-                           int height, bool remote_session, float* delta_x, float* delta_y) {
-  if (state == nullptr || delta_x == nullptr || delta_y == nullptr || width <= 0 ||
-      height <= 0) {
-    return false;
-  }
-  *delta_x = 0.0F;
-  *delta_y = 0.0F;
-  const int x = static_cast<int>(static_cast<float>(raw_x) / 65535.0F * static_cast<float>(width));
-  const int y =
-      static_cast<int>(static_cast<float>(raw_y) / 65535.0F * static_cast<float>(height));
-  if (!state->has_last) {
-    state->has_last = true;
-    state->last_x = x;
-    state->last_y = y;
-    return false;
-  }
-  const int relative_x = x - state->last_x;
-  const int relative_y = y - state->last_y;
-  state->last_x = x;
-  state->last_y = y;
-  const int limit = remote_session ? height / 6 : kMaximumAbsoluteJump;
-  const bool jump = remote_session
-                        ? (std::abs(relative_x) >= limit || std::abs(relative_y) >= limit)
-                        : (std::abs(relative_x) > limit || std::abs(relative_y) > limit);
-  if (jump || (relative_x == 0 && relative_y == 0)) {
-    return false;
-  }
-  *delta_x = static_cast<float>(relative_x);
-  *delta_y = static_cast<float>(relative_y);
-  return true;
-}
-
 GameWindow* CurrentGameWindow() {
   CurrentWindowState& state = State();
   std::lock_guard<std::mutex> lock(state.mutex);
@@ -381,13 +347,9 @@ bool Win32PointerCaptureBackend::Apply(const mwindow::PointerCaptureRequest& req
       }
     }
     relative_mode_ = true;
-    window_->raw_absolute_ = {};
-    const bool raw = window_->options_.raw_mouse && window_->SetRawMouseRegistered(true);
-    if (!raw && window_->focused_) {
-      POINT center = window_->ClientCenter();
-      ClientToScreen(hwnd, &center);
-      WarpCursor(center.x, center.y);
-    }
+    window_->BeginRelativeMotion(request.release_position == mwindow::PointerReleasePosition::kDragStart
+                                     ? drag_start_
+                                     : std::nullopt);
   }
   if (!request.relative_mode && relative_mode_) {
     if (request.release_position != mwindow::PointerReleasePosition::kUnchanged &&
@@ -409,7 +371,7 @@ bool Win32PointerCaptureBackend::Apply(const mwindow::PointerCaptureRequest& req
     }
     relative_mode_ = false;
     drag_start_.reset();
-    window_->SetRawMouseRegistered(false);
+    window_->ForgetRelativePosition();
   }
   cursor_hidden_ = !request.cursor_visible;
   Reassert();
@@ -424,12 +386,8 @@ void Win32PointerCaptureBackend::OnWindowFocusGained() {
   if (hwnd == nullptr || !relative_mode_) {
     return;
   }
-  if (!window_->raw_input_registered_ && window_->pixel_width_ > 0 &&
-      window_->pixel_height_ > 0) {
-    POINT center = window_->ClientCenter();
-    ClientToScreen(hwnd, &center);
-    WarpCursor(center.x, center.y);
-  }
+  window_->ForgetRelativePosition();
+  window_->RecenterCapturedCursor(true);
   Reassert();
 }
 
@@ -441,12 +399,7 @@ void Win32PointerCaptureBackend::Reassert() {
   if (relative_mode_ && window_->options_.confine_cursor && window_->focused_ &&
       window_->pixel_width_ > 0 && window_->pixel_height_ > 0) {
     RECT clip{};
-    if (window_->raw_input_registered_) {
-      const POINT center = window_->ClientCenter();
-      clip = {center.x, center.y, center.x + 2, center.y + 2};
-    } else {
-      GetClientRect(hwnd, &clip);
-    }
+    GetClientRect(hwnd, &clip);
     POINT top_left{clip.left, clip.top};
     POINT bottom_right{clip.right, clip.bottom};
     ClientToScreen(hwnd, &top_left);
@@ -618,8 +571,6 @@ Status GameWindow::Create(const GameWindowOptions& options) {
   persistence_active_ = enable_persistence;
   persisted_.maximized = restore_maximized_pending_;
 
-  raw_input_registered_ = false;
-
   text_backend_.Attach(hwnd_, [this] { return CoordinateTransform(); });
   RefreshClientSize();
   emitted_width_ = pixel_width_;
@@ -685,9 +636,9 @@ Status GameWindow::Create(const GameWindowOptions& options) {
     SetCurrentGameWindow(this);
   }
   std::fprintf(stderr,
-               "  [window] created %s %ux%u px dpi=%u raw_mouse=%d alt_enter=%d\n",
+               "  [window] created %s %ux%u px dpi=%u alt_enter=%d\n",
                WindowModeName(options_.mode), pixel_width_, pixel_height_, dpi_,
-               options_.raw_mouse ? 1 : 0, options_.alt_enter_fullscreen ? 1 : 0);
+               options_.alt_enter_fullscreen ? 1 : 0);
   return Status::Ok();
 }
 
@@ -718,7 +669,6 @@ void GameWindow::Destroy() {
   text_backend_.Detach();
   fullscreen_request_.Reset();
   fullscreen_menu_request_.Reset();
-  SetRawMouseRegistered(false);
   if (GetCapture() == hwnd_) {
     ReleaseCapture();
   }
@@ -920,9 +870,6 @@ LRESULT GameWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) {
         return TRUE;
       }
       break;
-    case WM_INPUT:
-      OnRawInput(lparam);
-      break;
     case WM_DEVICECHANGE:
       device_changes_.fetch_add(1, std::memory_order_relaxed);
       return TRUE;
@@ -1123,6 +1070,7 @@ bool GameWindow::Pump() {
     TranslateMessage(&message);
     DispatchMessageW(&message);
   }
+  RecenterCapturedCursor(false);
   FlushMotion();
   in_pump_ = false;
   if (hwnd_ == nullptr) {
@@ -1652,33 +1600,6 @@ void GameWindow::PersistWindowState() {
   persistence_dirty_ = false;
 }
 
-bool GameWindow::SetRawMouseRegistered(bool registered) {
-  if (registered == raw_input_registered_) {
-    return true;
-  }
-  RAWINPUTDEVICE device{};
-  device.usUsagePage = 0x01;
-  device.usUsage = 0x02;
-  if (registered) {
-    device.dwFlags = options_.raw_input_background ? RIDEV_INPUTSINK : 0;
-    device.hwndTarget = hwnd_;
-  } else {
-    device.dwFlags = RIDEV_REMOVE;
-    device.hwndTarget = nullptr;
-  }
-  if (!RegisterRawInputDevices(&device, 1, sizeof(device))) {
-    if (registered) {
-      std::fprintf(stderr,
-                   "  [input] Raw Input registration failed (%lu); using cursor "
-                   "re-centering for relative motion\n",
-                   GetLastError());
-    }
-    return false;
-  }
-  raw_input_registered_ = registered;
-  return true;
-}
-
 bool GameWindow::TextInputActive() const { return text_backend_.active(); }
 
 std::uint32_t GameWindow::ButtonMask() const { return buttons_down_; }
@@ -1711,93 +1632,77 @@ void GameWindow::OnFocus(bool focused) {
   PushHostEvent(focused ? HostWindowEventType::kFocusGained : HostWindowEventType::kFocusLost);
 }
 
-void GameWindow::OnRawInput(LPARAM lparam) {
-  UINT size = 0;
-  if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lparam), RID_INPUT, nullptr, &size,
-                      sizeof(RAWINPUTHEADER)) != 0 ||
-      size == 0) {
-    return;
+void GameWindow::BeginRelativeMotion(const std::optional<mwindow::PointerPosition>& from) {
+  has_relative_position_ = from.has_value() && std::isfinite(from->x) && std::isfinite(from->y);
+  if (has_relative_position_) {
+    relative_x_ = from->x;
+    relative_y_ = from->y;
   }
-  if (raw_buffer_.size() < size) {
-    raw_buffer_.resize(size);
-  }
-  if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lparam), RID_INPUT, raw_buffer_.data(), &size,
-                      sizeof(RAWINPUTHEADER)) == static_cast<UINT>(-1)) {
-    return;
-  }
-  const auto* raw = reinterpret_cast<const RAWINPUT*>(raw_buffer_.data());
-  if (raw->header.dwType != RIM_TYPEMOUSE) {
-    return;
-  }
-  ++stats_.raw_mouse_packets;
-  if (raw->header.hDevice == nullptr) {
-    ++stats_.raw_mouse_injected_packets;
-  }
-  if (options_.raw_input_count_tag != 0 &&
-      raw->data.mouse.ulExtraInformation == options_.raw_input_count_tag) {
-    ++stats_.raw_mouse_tagged_packets;
-  }
-  if (!pointer_backend_->relative_mode() || !raw_input_registered_) {
-    return;
-  }
-  if (!focused_ && !options_.raw_input_background) {
-    return;
-  }
-  const RAWMOUSE& mouse = raw->data.mouse;
-  float delta_x = 0.0F;
-  float delta_y = 0.0F;
-  if ((mouse.usFlags & MOUSE_MOVE_ABSOLUTE) != 0) {
-    if (mouse.lLastX == 0 && mouse.lLastY == 0) {
-      return;
-    }
-    const bool virtual_desktop = (mouse.usFlags & MOUSE_VIRTUAL_DESKTOP) != 0;
-    const int width = GetSystemMetrics(virtual_desktop ? SM_CXVIRTUALSCREEN : SM_CXSCREEN);
-    const int height = GetSystemMetrics(virtual_desktop ? SM_CYVIRTUALSCREEN : SM_CYSCREEN);
-    if (!RawAbsoluteToRelative(&raw_absolute_, mouse.lLastX, mouse.lLastY, width, height,
-                               GetSystemMetrics(SM_REMOTESESSION) != 0, &delta_x, &delta_y)) {
-      return;
-    }
-  } else {
-    delta_x = static_cast<float>(mouse.lLastX);
-    delta_y = static_cast<float>(mouse.lLastY);
-  }
-  if (delta_x == 0.0F && delta_y == 0.0F) {
-    return;
-  }
-  const mwindow::PointerPosition pin = RelativePin();
-  EmitMotion({pin.x, pin.y, delta_x, delta_y, ButtonMask(), true});
+  recenter_pending_ = false;
+  RecenterCapturedCursor(!has_relative_position_);
 }
 
-mwindow::PointerPosition GameWindow::RelativePin() const {
-  const auto& start = pointer_backend_->drag_start();
-  if (start && std::isfinite(start->x) && std::isfinite(start->y) &&
-      pointer_owner_->release_position() == mwindow::PointerReleasePosition::kDragStart) {
-    return {std::clamp(start->x, 0.0F, std::max(0.0F, static_cast<float>(pixel_width_) - 1.0F)),
-            std::clamp(start->y, 0.0F, std::max(0.0F, static_cast<float>(pixel_height_) - 1.0F))};
+void GameWindow::ForgetRelativePosition() {
+  has_relative_position_ = false;
+  recenter_pending_ = false;
+}
+
+void GameWindow::RecenterCapturedCursor(bool force) {
+  if (hwnd_ == nullptr || !focused_ || recenter_pending_ || !pointer_backend_->relative_mode() ||
+      pixel_width_ == 0 || pixel_height_ == 0) {
+    return;
   }
-  const POINT center = ClientCenter();
-  return {static_cast<float>(center.x), static_cast<float>(center.y)};
+  POINT center = ClientCenter();
+  if (!force) {
+    if (!has_relative_position_) {
+      return;
+    }
+    const float reach =
+        std::max(32.0F, static_cast<float>(std::min(pixel_width_, pixel_height_)) / 4.0F);
+    if (std::abs(relative_x_ - static_cast<float>(center.x)) <= reach &&
+        std::abs(relative_y_ - static_cast<float>(center.y)) <= reach) {
+      return;
+    }
+  }
+  ClientToScreen(hwnd_, &center);
+  if (WarpCursorScreen(center.x, center.y)) {
+    recenter_pending_ = true;
+  }
 }
 
 void GameWindow::OnMouseMove(LPARAM lparam) {
   const float x = static_cast<float>(GET_X_LPARAM(lparam));
   const float y = static_cast<float>(GET_Y_LPARAM(lparam));
   if (pointer_backend_->relative_mode()) {
-    if (raw_input_registered_) {
+    if (!has_relative_position_) {
+      has_relative_position_ = true;
+      relative_x_ = x;
+      relative_y_ = y;
+      recenter_pending_ = false;
       return;
     }
-    POINT center = ClientCenter();
-    const float delta_x = x - static_cast<float>(center.x);
-    const float delta_y = y - static_cast<float>(center.y);
+    float from_x = relative_x_;
+    float from_y = relative_y_;
+    if (recenter_pending_) {
+      recenter_pending_ = false;
+      const POINT center = ClientCenter();
+      const float center_x = static_cast<float>(center.x);
+      const float center_y = static_cast<float>(center.y);
+      const float after_recenter = std::abs(x - center_x) + std::abs(y - center_y);
+      const float without_recenter = std::abs(x - from_x) + std::abs(y - from_y);
+      if (after_recenter <= without_recenter) {
+        from_x = center_x;
+        from_y = center_y;
+      }
+    }
+    relative_x_ = x;
+    relative_y_ = y;
+    const float delta_x = x - from_x;
+    const float delta_y = y - from_y;
     if (delta_x == 0.0F && delta_y == 0.0F) {
       return;
     }
-    if (focused_) {
-      ClientToScreen(hwnd_, &center);
-      WarpCursorScreen(center.x, center.y);
-    }
-    const mwindow::PointerPosition pin = RelativePin();
-    EmitMotion({pin.x, pin.y, delta_x, delta_y, ButtonMask(), true});
+    EmitMotion({cursor_x_, cursor_y_, delta_x, delta_y, ButtonMask(), true});
     return;
   }
   const float delta_x = has_cursor_position_ ? x - cursor_x_ : 0.0F;
@@ -1839,11 +1744,6 @@ void GameWindow::OnMouseButton(std::uint8_t sdl_button, bool pressed, LPARAM lpa
   event.clicks = 1;
   event.x = cursor_x_;
   event.y = cursor_y_;
-  if (relative) {
-    const mwindow::PointerPosition pin = RelativePin();
-    event.x = pin.x;
-    event.y = pin.y;
-  }
   event.relative_mode = relative;
   Emit(event);
   if (sdl_button == SDL_BUTTON_RIGHT &&

@@ -54,15 +54,6 @@ struct CursorOps {
   std::function<bool(int screen_x, int screen_y)> set_cursor_pos;
 };
 
-struct RawAbsoluteMotion {
-  bool has_last = false;
-  int last_x = 0;
-  int last_y = 0;
-};
-
-bool RawAbsoluteToRelative(RawAbsoluteMotion* state, LONG raw_x, LONG raw_y, int width,
-                           int height, bool remote_session, float* delta_x, float* delta_y);
-
 struct GameWindowOptions {
   int width = 1280;
   int height = 720;
@@ -70,15 +61,12 @@ struct GameWindowOptions {
   std::wstring title = L"Elixir";
   bool start_hidden = true;
   bool offscreen = false;
-  bool raw_mouse = true;
   bool alt_enter_fullscreen = true;
   bool f11_fullscreen = true;
   bool confine_cursor = true;
   CursorOps cursor_ops;
-  bool raw_input_background = false;
   bool pump_wake_on_input = false;
   std::uint64_t pump_interval_ns = mocktail::window::kProductionInputPumpIntervalNs;
-  std::uint32_t raw_input_count_tag = 0;
   mocktail::window::WindowResizeReadinessConfig resize_readiness{};
   std::filesystem::path state_path;
 };
@@ -132,9 +120,6 @@ struct GameWindowSnapshot {
 struct InputStats {
   std::uint64_t pumps = 0;
   std::uint64_t messages = 0;
-  std::uint64_t raw_mouse_packets = 0;
-  std::uint64_t raw_mouse_injected_packets = 0;
-  std::uint64_t raw_mouse_tagged_packets = 0;
   std::uint64_t motion_events = 0;
   std::uint64_t key_events = 0;
   std::uint64_t text_events = 0;
@@ -151,7 +136,6 @@ class Win32PointerCaptureBackend final
   bool Apply(const mocktail::window::PointerCaptureRequest& request) override;
 
   bool relative_mode() const { return relative_mode_; }
-  const std::optional<mocktail::window::PointerPosition>& drag_start() const { return drag_start_; }
   bool cursor_hidden() const { return cursor_hidden_; }
   bool clip_applied() const { return clip_applied_; }
   void Reassert();
@@ -251,7 +235,9 @@ class GameWindow final {
 
   void Emit(mocktail::platform::PlatformEventPayload payload);
   void EmitMotion(const mocktail::platform::MouseMotionEvent& motion);
-  mocktail::window::PointerPosition RelativePin() const;
+  void BeginRelativeMotion(const std::optional<mocktail::window::PointerPosition>& from);
+  void ForgetRelativePosition();
+  void RecenterCapturedCursor(bool force);
   void FlushMotion();
   void PushHostEvent(HostWindowEventType type);
   bool AttachMicrophoneSystemMenu();
@@ -259,7 +245,6 @@ class GameWindow final {
   bool InvokeMicrophoneMenuCommand(UINT command);
 
   LRESULT OnKey(UINT message, WPARAM wparam, LPARAM lparam);
-  void OnRawInput(LPARAM lparam);
   void OnMouseMove(LPARAM lparam);
   void OnMouseButton(std::uint8_t sdl_button, bool pressed, LPARAM lparam);
   void OnMouseWheel(bool horizontal, WPARAM wparam, LPARAM lparam);
@@ -270,7 +255,6 @@ class GameWindow final {
   void OnImeComposition(LPARAM lparam);
   void OnChar(UINT message, WPARAM wparam);
 
-  bool SetRawMouseRegistered(bool registered);
   bool ClipCursorScreen(const RECT* screen_rect);
   bool WarpCursorScreen(int screen_x, int screen_y);
   void RefreshClientSize();
@@ -323,8 +307,10 @@ class GameWindow final {
   float cursor_x_ = 0.0F;
   float cursor_y_ = 0.0F;
   std::uint32_t buttons_down_ = 0;
-  RawAbsoluteMotion raw_absolute_{};
-  std::vector<BYTE> raw_buffer_;
+  bool has_relative_position_ = false;
+  float relative_x_ = 0.0F;
+  float relative_y_ = 0.0F;
+  bool recenter_pending_ = false;
   mocktail::platform::PlatformEvent pending_motion_{};
   bool has_pending_motion_ = false;
 
@@ -356,7 +342,6 @@ class GameWindow final {
   std::unique_ptr<mocktail::window::WindowResizeReadinessGate> resize_readiness_;
   std::optional<mocktail::window::InputPumpPacer> pacer_;
   bool initial_fullscreen_sync_pending_ = false;
-  bool raw_input_registered_ = false;
   std::unique_ptr<Win32PointerCaptureBackend> pointer_backend_;
   std::unique_ptr<mocktail::window::WindowPointerCaptureOwner> pointer_owner_;
   Win32TextInputBackend text_backend_;

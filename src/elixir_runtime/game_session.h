@@ -32,7 +32,6 @@ struct GameSessionOptions {
   int width = 1280;
   int height = 720;
   std::wstring title = L"Roblox";
-  bool raw_mouse = false;
   std::filesystem::path state_path;
   bool offscreen = false;
 };

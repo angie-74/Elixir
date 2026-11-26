@@ -233,6 +233,7 @@ private:
  };
 
   Status CheckJniException(JNIEnv *env, const char *operation) const;
+  Status AttachRobloxWebViewProtocol(JNIEnv* env);
   Status BroadcastDataModelFocus(JNIEnv *env, const char *state);
   Status HandleOwnedMessageFromSource(std::string message, OpenSource source);
   Status DispatchOpenRequest(RobloxWebViewOpenRequest request,
@@ -288,6 +289,9 @@ private:
   bool platform_web_callbacks_registered_ = false;
   bool cookie_set_handler_registered_ = false;
   std::atomic<uint64_t> next_host_window_generation_{1};
+  const std::shared_ptr<std::atomic<uint64_t>> close_requests_ =
+      std::make_shared<std::atomic<uint64_t>>(0);
+  uint64_t close_requests_at_notice_ = 0;
   std::mutex host_window_event_mutex_;
   std::deque<PendingHostWindowEvent> pending_host_window_events_;
 };

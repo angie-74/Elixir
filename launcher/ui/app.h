@@ -382,7 +382,6 @@ class App final : public AccessibilityHost {
   float BuildMods(Ui& ui, float x, float y, float width);
   float BuildShortcuts(Ui& ui, float x, float y, float width);
   float BuildFastFlags(Ui& ui, float x, float y, float width);
-  float BuildFramerateLimit(Ui& ui, float x, float y, float width);
   float BuildGlobalSettings(Ui& ui, float x, float y, float width);
   void RefreshGlobalSettings();
   void SaveGlobalValue(GlobalSetting setting, std::string value);

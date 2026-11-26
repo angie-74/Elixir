@@ -95,34 +95,6 @@ float App::FastFlagsWarning(Ui& ui, float x, float y, float width) {
   return y;
 }
 
-float App::BuildFramerateLimit(Ui& ui, float x, float y, float width) {
-  y = SectionTitle(ui, x, y, width, L"Frame rate");
-  const float cx = x + theme::kCardPadding;
-  const float cw = width - 2.0f * theme::kCardPadding;
-  D2D1_RECT_F control{};
-  const bool known = global_settings_.has_value();
-  const bool in_use = global_data_in_use_ || runtime_.running;
-  const bool editable = known && !global_settings_->read_only && !in_use;
-  std::wstring fps = known && global_settings_->framerate_cap && *global_settings_->framerate_cap > 0
-                         ? std::to_wstring(*global_settings_->framerate_cap)
-                         : std::wstring();
-  const std::wstring description =
-      !known ? (global_settings_error_.empty()
-                    ? std::wstring(L"Open Roblox once in this Elixir profile to create its settings file.")
-                    : global_settings_error_)
-      : in_use ? std::wstring(L"Close Roblox to change it.")
-      : global_settings_->read_only
-          ? std::wstring(L"Roblox’s settings file is read-only. Turn that off in Global Settings.")
-          : std::wstring(L"Frames per second. Leave it empty for Roblox’s default.");
-  BeginOptions();
-  float cy = SettingRow(ui, cx, y, cw, L"Framerate limit", description, 145.0f, 32.0f, &control, true);
-  if (ui.TextField(L"fflags.fps", control, &fps, known ? L"Default" : L"Not set", L"Framerate limit", editable)) {
-    fps = TrimWide(fps);
-    SaveGlobalValue(GlobalSetting::kFramerateCap, fps.empty() ? "-1" : WideToUtf8(fps));
-  }
-  return EndOptions(cy);
-}
-
 float App::BuildFastFlags(Ui& ui, float x, float y, float width) {
   pending_menu_.reset();
   if (!fast_flags_.editor) LoadFastFlags(true);
@@ -191,8 +163,6 @@ float App::BuildFastFlags(Ui& ui, float x, float y, float width) {
     }
   }
   y = EndOptions(cy) + 24.0f;
-
-  y = BuildFramerateLimit(ui, x, y, width) + 24.0f;
 
   std::vector<std::string> groups;
   for (const fflags::Preset& preset : fflags::BuiltinPresets()) {

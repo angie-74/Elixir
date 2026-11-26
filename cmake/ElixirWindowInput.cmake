@@ -156,7 +156,6 @@ if(BUILD_TESTING)
     tests/windows/window/keyboard_mapping_test.cc
     tests/windows/window/gamepad_mapping_test.cc
     tests/windows/window/game_window_test.cc
-    tests/windows/window/input_injection_test.cc
     tests/windows/window/window_state_store_windows_test.cc
     tests/windows/window/window_lifetime_test.cc
     tests/windows/window/text_overlay_window_test.cc)

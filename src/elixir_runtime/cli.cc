@@ -176,7 +176,6 @@ const std::vector<OptionSpec>& Options() {
          return {};
        }},
       {"--mods-dir", true, [](LaunchOptions* o, const std::string& v) { return PathOption(&o->mods_dir, v); }},
-      {"--raw-mouse", true, [](LaunchOptions* o, const std::string& v) { return OnOff(&o->raw_mouse, v); }},
       {"--controller", true, [](LaunchOptions* o, const std::string& v) { return OnOff(&o->controller, v); }},
       {"--user-fflags", true, [](LaunchOptions* o, const std::string& v) { return OnOff(&o->user_fflags, v); }},
       {"--discord", true,
@@ -362,7 +361,7 @@ std::string RuntimeUsage() {
            "\n"
            "Settings (default: config.json):\n"
            "  --renderer vulkan  --present-mode fifo|mailbox|immediate  --frame-rate-cap <fps>\n"
-           "  --resolution-scale <0.25-1.00>  --raw-mouse on|off  --controller on|off\n"
+           "  --resolution-scale <0.25-1.00>  --controller on|off\n"
            "  (no frame-rate cap or window mode: Roblox's own settings decide both)\n"
            "  --audio-device default|<endpoint id>\n"
            "  --audio-input-device default|disabled|<capture endpoint id>\n"
@@ -419,7 +418,6 @@ std::vector<std::string> FormatRuntimeArguments(const LaunchOptions& options) {
     std::snprintf(scale, sizeof(scale), "%.2f", IsValidResolutionScale(value) ? value : 1.0);
     add("--resolution-scale", scale);
   }
-  if (options.raw_mouse) add("--raw-mouse", on_off(*options.raw_mouse));
   if (options.controller) add("--controller", on_off(*options.controller));
   if (options.user_fflags) add("--user-fflags", on_off(*options.user_fflags));
   if (options.instance) add("--instance", std::to_string(*options.instance));

@@ -931,7 +931,6 @@ int RunElixirRuntime(const std::vector<std::string>& arguments) {
     window_options.height = config.config.window().height;
     window_options.title = PathFromUtf8(config.config.window().title).wstring();
     if (options.instance) window_options.title += L" (" + std::to_wstring(*options.instance) + L")";
-    window_options.raw_mouse = options.raw_mouse.value_or(false);
     window_options.state_path = paths.state_root() / L"window_state.json";
     window_options.offscreen = mr::ProcessEnvironment().GetOr("ELIXIR_WINDOW_OFFSCREEN", "") == "1";
     std::string window_error;

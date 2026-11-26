@@ -941,18 +941,8 @@ Status RobloxWebViewBridge::Initialize() {
     return finish_failed_initialization(status);
   }
 
-  jclass initialization_class = env->FindClass(kWebViewProtocolClass);
-  if (initialization_class != nullptr) {
-    symbols_.initialize_android_web_view_protocol(env, initialization_class);
-    env->DeleteLocalRef(initialization_class);
-  }
-  status = CheckJniException(env, "initialize Android WebViewProtocol");
-  if (!status.ok() || initialization_class == nullptr) {
-    if (status.ok()) {
-      status = Unavailable(
-          "WebViewProtocol class is unavailable during native "
-          "initialization");
-    }
+  status = AttachRobloxWebViewProtocol(env);
+  if (!status.ok()) {
     release_resources();
     return finish_failed_initialization(status);
   }
@@ -1411,6 +1401,7 @@ Status RobloxWebViewBridge::DrainHostWindowEvents() {
         }
         break;
       case HostWindowEventType::kMessageBusWindowClose: {
+        close_requests_at_notice_ = close_requests_->load();
         jstring payload = env->NewStringUTF("{}");
         if (payload == nullptr) {
           status = Unavailable("could not allocate WebView close payload");
@@ -1421,6 +1412,9 @@ Status RobloxWebViewBridge::DrainHostWindowEvents() {
           status = CheckJniException(env, "publish WebView.handleWindowClose");
         }
         if (status.ok()) {
+          status = AttachRobloxWebViewProtocol(env);
+        }
+        if (status.ok()) {
           std::fprintf(stderr,
                        "  [webview] MessageBus web surface close delivered "
                        "to Roblox\n");
@@ -1428,13 +1422,17 @@ Status RobloxWebViewBridge::DrainHostWindowEvents() {
         break;
       }
       case HostWindowEventType::kBackNavigation:
-        std::thread([] {
+        std::thread([requests = close_requests_,
+                     seen = close_requests_at_notice_] {
           std::this_thread::sleep_for(kBackNavigationDelay);
+          if (requests->load() != seen) {
+            return;
+          }
+          std::fprintf(stderr,
+                       "  [webview] Roblox kept its page open; Back passed "
+                       "to Roblox\n");
           PostBackKeyToGameWindow();
         }).detach();
-        std::fprintf(stderr,
-                     "  [webview] the page window was closed; Back passed to "
-                     "Roblox\n");
         break;
     }
     if (status.ok() && event.type != HostWindowEventType::kDataModelUnfocused) {
@@ -1636,6 +1634,22 @@ Status RobloxWebViewBridge::CheckJniException(JNIEnv *env,
           " raised a JNI exception");
 }
 
+Status RobloxWebViewBridge::AttachRobloxWebViewProtocol(JNIEnv* env) {
+  jclass protocol_class = env->FindClass(kWebViewProtocolClass);
+  const bool found = protocol_class != nullptr;
+  if (found) {
+    symbols_.initialize_android_web_view_protocol(env, protocol_class);
+    env->DeleteLocalRef(protocol_class);
+  }
+  const Status status =
+      CheckJniException(env, "initialize Android WebViewProtocol");
+  if (status.ok() && !found) {
+    return Unavailable(
+        "WebViewProtocol class is unavailable during native initialization");
+  }
+  return status;
+}
+
 Status RobloxWebViewBridge::BroadcastDataModelFocus(JNIEnv *env,
                                                     const char *state) {
   if (env == nullptr || state == nullptr || state[0] == '\0') {
@@ -1711,6 +1725,7 @@ void RobloxWebViewBridge::RawMessageCallback(void *context, JNIEnv *env,
       break;
     case SubscriptionKind::kCloseWindow:
       std::fprintf(stderr, "  [webview] closeWindow event received\n");
+      target->bridge->close_requests_->fetch_add(1);
       status = target->bridge->HandleCloseWindow();
       break;
   }
