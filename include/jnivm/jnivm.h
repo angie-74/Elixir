@@ -91,6 +91,7 @@ enum class RobloxAppRestartReason {
 
 struct RobloxAppRestartCallbacks {
   void (*restart)(void *context, RobloxAppRestartReason reason) = nullptr;
+  void (*account_event)(void *context, const char *type) = nullptr;
 };
 
 struct FmodAudioDeviceCallbacks {
@@ -318,6 +319,7 @@ public:
                                const RobloxAppRestartCallbacks &callbacks);
   void ClearRobloxAppRestartSink();
   void DispatchRobloxAppRestart(RobloxAppRestartReason reason);
+  void DispatchRobloxAccountEvent(const char *type);
 
   void SetFmodAudioDeviceCallbacks(std::shared_ptr<void> context,
                                    const FmodAudioDeviceCallbacks &callbacks);

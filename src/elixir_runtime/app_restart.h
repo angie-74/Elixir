@@ -29,6 +29,7 @@ class AppRestart {
   static std::shared_ptr<AppRestart> Install(jnivm::VM& vm, Options options);
 
   bool Request(RestartCause cause);
+  void NoteAccountEvent(std::string_view type);
   const std::atomic<bool>& requested() const { return requested_; }
   RestartCause cause() const { return cause_.load(); }
   void Detach();

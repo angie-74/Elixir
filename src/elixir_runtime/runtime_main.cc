@@ -802,6 +802,14 @@ int RunElixirRuntime(const std::vector<std::string>& arguments) {
   AppRestart::Options restart_options;
   restart_options.log = [](std::string_view line) { Log(line); };
   const std::shared_ptr<AppRestart> restart = AppRestart::Install(*java_vm, std::move(restart_options));
+  if (const std::string after = mr::ProcessEnvironment().GetOr("ELIXIR_RESTART_TEST_MS", ""); !after.empty()) {
+    SetEnvironmentVariableW(L"ELIXIR_RESTART_TEST_MS", nullptr);
+    const unsigned long delay = std::strtoul(after.c_str(), nullptr, 10);
+    std::thread([restart, delay] {
+      Sleep(delay);
+      static_cast<void>(restart->Request(RestartCause::kAccountSwitched));
+    }).detach();
+  }
   if (sign_in == nullptr) {
     Log("sign-in: the account lookup is unavailable (its thread could not be started)");
   } else {

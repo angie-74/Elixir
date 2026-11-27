@@ -565,13 +565,48 @@ void SetStringFieldRaw(jobject obj, const char* field_name, const char* value) {
   DeleteLocalJniReference(string);
 }
 
-void RecordAppBridgeNotification(jobject obj, jstring type, jstring data) {
+void SyncRobloxCookiesFromEngine(VM* vm);
+
+bool IsRobloxAccountNotification(const std::string& type) {
+  for (const char* name :
+       {"DID_LOG_IN", "DID_LOG_OUT", "DID_SIGN_UP", "DID_SWITCH_ACCOUNT",
+        "ACTION_LOG_OUT", "LUA_UNAUTHORIZED_LOG_OUT", "RESTART_LUA_APP",
+        "RESTART_APP"}) {
+    if (type == name) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void HandleRobloxAccountNotification(const std::string& type) {
+  if (!IsRobloxAccountNotification(type)) {
+    return;
+  }
+  VM* vm = CurrentVM();
+  if (vm == nullptr) {
+    return;
+  }
+  vm->DispatchRobloxAccountEvent(type.c_str());
+  if (type == "DID_SWITCH_ACCOUNT") {
+    SyncRobloxCookiesFromEngine(vm);
+    vm->DispatchRobloxAppRestart(RobloxAppRestartReason::kAccountSwitched);
+  } else if (type == "RESTART_LUA_APP") {
+    vm->DispatchRobloxAppRestart(RobloxAppRestartReason::kRequestedByRoblox);
+  }
+}
+
+void RecordAppBridgeNotification(jobject obj, jstring type, jstring data,
+                                 bool handle = true) {
   const std::string type_value = StringFromJString(type);
   const std::string data_value = StringFromJString(data);
   SetStringFieldRaw(obj, "lastAppBridgeNotificationType", type_value.c_str());
   SetStringFieldRaw(obj, "lastAppBridgeNotificationData", data_value.c_str());
   if (type_value == "APP_READY") {
     SetBooleanFieldRaw(obj, "appReady", JNI_TRUE);
+  }
+  if (handle) {
+    HandleRobloxAccountNotification(type_value);
   }
   if (TraceEnabled()) {
     std::cout << "  [JNI callback] OnAppBridgeNotificationListener.a type="
@@ -589,7 +624,7 @@ void ForwardDataModelNotificationToAppBridgeListener(jstring type,
   if (listener == nullptr) {
     return;
   }
-  RecordAppBridgeNotification(listener, type, data);
+  RecordAppBridgeNotification(listener, type, data, false);
   DeleteLocalJniReference(listener);
 }
 
@@ -609,6 +644,7 @@ void RecordDataModelNotification(jobject obj, jstring type, jstring data) {
   if (vm != nullptr) {
     (void)vm->DispatchRobloxDataModelNotification(vm->GetJNIEnv(), type, data);
   }
+  HandleRobloxAccountNotification(type_value);
   ForwardDataModelNotificationToAppBridgeListener(type, data);
 }
 
@@ -6031,6 +6067,18 @@ void VM::DispatchRobloxAppRestart(RobloxAppRestartReason reason) {
   }
   if (binding.context != nullptr && binding.callbacks.restart != nullptr) {
     binding.callbacks.restart(binding.context.get(), reason);
+  }
+}
+
+void VM::DispatchRobloxAccountEvent(const char* type) {
+  RobloxAppRestartBinding binding;
+  {
+    std::lock_guard<std::mutex> lock(roblox_app_restart_mutex_);
+    binding = roblox_app_restart_binding_;
+  }
+  if (type != nullptr && binding.context != nullptr &&
+      binding.callbacks.account_event != nullptr) {
+    binding.callbacks.account_event(binding.context.get(), type);
   }
 }
 

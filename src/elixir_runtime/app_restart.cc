@@ -20,6 +20,11 @@ void OnRestart(void* context, jnivm::RobloxAppRestartReason reason) {
                                          : RestartCause::kRequestedByRoblox));
 }
 
+void OnAccountEvent(void* context, const char* type) {
+  auto* restart = static_cast<AppRestart*>(context);
+  if (restart != nullptr && type != nullptr) restart->NoteAccountEvent(type);
+}
+
 }
 
 AppRestart::AppRestart(Options options) : options_(std::move(options)) {
@@ -30,7 +35,7 @@ AppRestart::AppRestart(Options options) : options_(std::move(options)) {
 std::shared_ptr<AppRestart> AppRestart::Install(jnivm::VM& vm, Options options) {
   std::shared_ptr<AppRestart> restart(new AppRestart(std::move(options)));
   restart->vm_.store(&vm);
-  vm.SetRobloxAppRestartSink(restart, jnivm::RobloxAppRestartCallbacks{&OnRestart});
+  vm.SetRobloxAppRestartSink(restart, jnivm::RobloxAppRestartCallbacks{&OnRestart, &OnAccountEvent});
   return restart;
 }
 
@@ -56,6 +61,14 @@ bool AppRestart::Request(RestartCause cause) {
   requested_.store(true);
   log(std::string("restart: ") + RestartReason(cause));
   return true;
+}
+
+void AppRestart::NoteAccountEvent(std::string_view type) {
+  if (!options_.log) return;
+  try {
+    options_.log("account: Roblox reported " + std::string(type));
+  } catch (...) {
+  }
 }
 
 void AppRestart::Detach() {
