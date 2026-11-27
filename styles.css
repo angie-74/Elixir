@@ -315,6 +315,28 @@ main > section,
   transform: none;
 }
 
+.ad {
+  display: flex;
+  justify-content: center;
+  width: min(var(--page), 100% - 40px);
+  margin: 64px auto 0;
+}
+
+.ad[hidden] {
+  display: none;
+}
+
+.ad-slot {
+  width: 728px;
+  height: 90px;
+}
+
+@media (max-width: 760px) {
+  .ad {
+    display: none;
+  }
+}
+
 .features,
 .questions {
   padding: 96px 0 0;
