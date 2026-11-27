@@ -788,7 +788,7 @@ void App::Paint() {
     for (const ControlRecord& record : records_) {
       if (record.id == anchor || record.id.rfind(anchor + L"#", 0) == 0 ||
           (anchor.back() == L'.' && record.id.rfind(anchor, 0) == 0)) {
-        ScrollIntoView(record.full_rect);
+        if (ScrollsWithPage(record)) ScrollIntoView(record.full_rect);
         SetFocusTo(record.id, true);
         break;
       }
@@ -1102,8 +1102,7 @@ void App::SetFocusTo(const std::wstring& id, bool visible, bool scroll_into_view
   state_.focus_visible = visible;
   for (std::size_t i = 0; i < records_.size(); ++i) {
     if (records_[i].id != id) continue;
-    const D2D1_RECT_F& rect = records_[i].full_rect;
-    if (scroll_into_view && rect.left >= viewport_.left && rect.top < 1e6f) ScrollIntoView(rect);
+    if (scroll_into_view && ScrollsWithPage(records_[i])) ScrollIntoView(records_[i].full_rect);
     if (hwnd_ != nullptr) NotifyWinEvent(EVENT_OBJECT_FOCUS, hwnd_, OBJID_CLIENT, static_cast<LONG>(i + 1));
     break;
   }
@@ -1457,6 +1456,12 @@ void App::AdvanceScroll() {
   const float remaining = target - scroll;
   const float step = remaining * static_cast<float>(1.0 - std::exp(-elapsed / 55.0));
   scroll = std::fabs(remaining - step) < 0.5f ? target : scroll + step;
+}
+
+bool App::ScrollsWithPage(const ControlRecord& record) const {
+  if (record.full_rect.left < viewport_.left || record.full_rect.top >= 1e6f) return false;
+  if (record.offscreen) return true;
+  return record.rect.top < viewport_.bottom && record.rect.bottom > viewport_.top;
 }
 
 void App::ScrollIntoView(const D2D1_RECT_F& rect) {

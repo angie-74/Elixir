@@ -436,6 +436,7 @@ class App final : public AccessibilityHost {
   void ScrollBy(float delta);
   void ScrollTo(float scroll);
   void ScrollIntoView(const D2D1_RECT_F& rect);
+  bool ScrollsWithPage(const ControlRecord& record) const;
   bool SmoothScrolling() const;
   void AdvanceScroll();
   void ActivateRecord(const ControlRecord& record);
