@@ -34,6 +34,7 @@ struct RobloxStartupOptions {
   mocktail::runtime::DisplaySize display;
   mocktail::runtime::DisplaySize window;
   float dpi_scale = 1.0f;
+  float surface_scale = 1.0f;
   bool headless = false;
 
   void* native_window = nullptr;

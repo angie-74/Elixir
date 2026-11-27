@@ -28,6 +28,7 @@
 #include "jnivm/jnivm.h"
 #include "platform/windows/guest_tls.h"
 #include "runtime/device_memory_profile.h"
+#include "graphics/render_scale.h"
 
 #if defined(ELIXIR_RUNTIME_HAS_ANDROID)
 #include "android/android.h"
@@ -264,6 +265,15 @@ std::string ResolutionText(const mocktail::runtime::DisplaySize& size) {
   return std::to_string(size.width) + "x" + std::to_string(size.height);
 }
 
+mocktail::runtime::DisplaySize SurfaceSize(const RobloxStartupOptions& options) {
+  return {static_cast<std::int32_t>(ScaledExtent(options.window.width, options.surface_scale)),
+          static_cast<std::int32_t>(ScaledExtent(options.window.height, options.surface_scale))};
+}
+
+float SurfaceDpiScale(const RobloxStartupOptions& options) {
+  return RendersSmaller(options.surface_scale) ? options.dpi_scale * options.surface_scale : options.dpi_scale;
+}
+
 jobject BuildDeviceParams(JNIEnv* env, const RobloxStartupOptions& options) {
   jobject params = NewObject(env, "com/roblox/engine/jni/model/DeviceParams");
   if (params == nullptr) return nullptr;
@@ -302,14 +312,15 @@ jobject BuildPlatformParams(JNIEnv* env, jobject surface, const RobloxStartupOpt
   SetStringField(env, params, "deviceName", options.device.display_name);
   SetStringField(env, params, "locale", "en_us");
   SetStringField(env, params, "assetFolderPath", options.asset_path);
-  SetIntField(env, params, "width", options.window.width);
-  SetIntField(env, params, "height", options.window.height);
+  const mocktail::runtime::DisplaySize surface_size = SurfaceSize(options);
+  SetIntField(env, params, "width", surface_size.width);
+  SetIntField(env, params, "height", surface_size.height);
   SetIntField(env, params, "screenWidth", options.display.width);
   SetIntField(env, params, "screenHeight", options.display.height);
   SetIntField(env, params, "densityDpi", 160);
   SetIntField(env, params, "viewportWidthMm", mocktail::runtime::PixelsToMillimetersAt160Dpi(options.window.width));
   SetIntField(env, params, "viewportHeightMm", mocktail::runtime::PixelsToMillimetersAt160Dpi(options.window.height));
-  SetFloatField(env, params, "dpiScale", options.dpi_scale);
+  SetFloatField(env, params, "dpiScale", SurfaceDpiScale(options));
   SetBooleanField(env, params, "isKeyboardDevice", options.input.keyboard_enabled);
   SetBooleanField(env, params, "isMouseDevice", options.input.mouse_enabled);
   SetBooleanField(env, params, "isTouchDevice", options.input.touch_enabled);
@@ -398,8 +409,9 @@ jobject BuildApplicationExitInfoList(JNIEnv* env) {
 jobject BuildSurface(JNIEnv* env, const RobloxStartupOptions& options) {
   jobject surface = NewObject(env, "android/view/Surface");
   if (surface == nullptr) return nullptr;
-  SetIntField(env, surface, "width", options.window.width);
-  SetIntField(env, surface, "height", options.window.height);
+  const mocktail::runtime::DisplaySize surface_size = SurfaceSize(options);
+  SetIntField(env, surface, "width", surface_size.width);
+  SetIntField(env, surface, "height", surface_size.height);
   SetBooleanField(env, surface, "valid", true);
   SetBooleanField(env, surface, "isValid", true);
   return surface;
@@ -457,8 +469,9 @@ jobject BuildStartAppParams(JNIEnv* env, const RobloxStartupOptions& options, js
   SetStringField(env, params, "deviceName", options.device.display_name);
   SetStringField(env, params, "locale", "en_us");
   SetRobloxServiceUrlFields(env, params);
-  SetIntField(env, params, "width", options.window.width);
-  SetIntField(env, params, "height", options.window.height);
+  const mocktail::runtime::DisplaySize surface_size = SurfaceSize(options);
+  SetIntField(env, params, "width", surface_size.width);
+  SetIntField(env, params, "height", surface_size.height);
   SetIntField(env, params, "screenWidth", options.display.width);
   SetIntField(env, params, "screenHeight", options.display.height);
   SetIntField(env, params, "densityDpi", 160);

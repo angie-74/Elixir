@@ -14,11 +14,13 @@
 #include <unordered_map>
 #include <vector>
 
+#include "graphics/render_scale.h"
 #include "graphics/vulkan/device_order.h"
 #include "graphics/vulkan/etc2_emulation.h"
 #include "graphics/vulkan/extension_policy.h"
 #include "graphics/vulkan/generated/vk_sysv_thunks.h"
 #include "graphics/vulkan/present_policy.h"
+#include "graphics/vulkan/present_scaling.h"
 #include "platform/windows/guest_tls.h"
 
 namespace elixir::vulkan {
@@ -159,6 +161,7 @@ struct DeviceRecord {
   VkPhysicalDevice physical_device = VK_NULL_HANDLE;
   CallbackList memory_report_callbacks;
   bool exclusive_fullscreen_control = false;
+  bool present_scaling = false;
 };
 
 struct CallbackObject {
@@ -197,13 +200,46 @@ CallbackObject TakeCallbackObject(std::unordered_map<std::uint64_t, CallbackObje
   return object;
 }
 
+struct WindowRecord {
+  HWND hwnd = nullptr;
+  float render_scale = 1.0f;
+};
+
 std::mutex& WindowMutex() {
   static std::mutex* mutex = new std::mutex;
   return *mutex;
 }
-std::unordered_map<const void*, HWND>& Windows() {
-  static auto* windows = new std::unordered_map<const void*, HWND>;
+std::unordered_map<const void*, WindowRecord>& Windows() {
+  static auto* windows = new std::unordered_map<const void*, WindowRecord>;
   return *windows;
+}
+std::unordered_map<std::uint64_t, const void*>& SurfaceWindows() {
+  static auto* surfaces = new std::unordered_map<std::uint64_t, const void*>;
+  return *surfaces;
+}
+
+void RememberSurfaceWindow(VkSurfaceKHR surface, const void* anative_window) {
+  std::lock_guard<std::mutex> lock(WindowMutex());
+  SurfaceWindows()[reinterpret_cast<std::uint64_t>(surface)] = anative_window;
+}
+
+void ForgetSurfaceWindow(VkSurfaceKHR surface) {
+  std::lock_guard<std::mutex> lock(WindowMutex());
+  SurfaceWindows().erase(reinterpret_cast<std::uint64_t>(surface));
+}
+
+float SurfaceRenderScale(VkSurfaceKHR surface) {
+  std::lock_guard<std::mutex> lock(WindowMutex());
+  const auto owner = SurfaceWindows().find(reinterpret_cast<std::uint64_t>(surface));
+  if (owner == SurfaceWindows().end()) return 1.0f;
+  const auto window = Windows().find(owner->second);
+  return window != Windows().end() ? window->second.render_scale : 1.0f;
+}
+
+void ScaleSurfaceCapabilitiesForGuest(VkSurfaceKHR surface, VkSurfaceCapabilitiesKHR* capabilities) {
+  if (capabilities == nullptr || !PresentStretchWanted()) return;
+  if (PresentStretchState() == PresentStretch::kUnsupported) return;
+  ScaleSurfaceCapabilities(SurfaceRenderScale(surface), capabilities);
 }
 
 void PublishLocked(State& state, std::size_t index) {
@@ -423,6 +459,19 @@ bool Etc2Advertised(VkPhysicalDevice physical_device) {
   return Etc2EmulatedPhysicalDevice(physical_device) && Etc2SupportAdvertised();
 }
 
+bool HostHasSwapchainMaintenance(VkPhysicalDevice physical_device) {
+  auto query = ELIXIR_VK_HOST(vkGetPhysicalDeviceFeatures2);
+  if (query == nullptr) query = ELIXIR_VK_HOST(vkGetPhysicalDeviceFeatures2KHR);
+  if (query == nullptr) return false;
+  VkPhysicalDeviceSwapchainMaintenance1FeaturesKHR maintenance{};
+  maintenance.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_KHR;
+  VkPhysicalDeviceFeatures2 features{};
+  features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+  features.pNext = &maintenance;
+  query(physical_device, &features);
+  return maintenance.swapchainMaintenance1 != VK_FALSE;
+}
+
 const void* FindInChain(const void* head, VkStructureType type) {
   for (auto* node = static_cast<const VkBaseInStructure*>(head); node != nullptr; node = node->pNext) {
     if (node->sType == type) return node;
@@ -584,7 +633,7 @@ std::uint64_t PresentedFrameCount() { return g_presented_frames.load(std::memory
 
 void RegisterNativeWindow(const void* anative_window, HWND hwnd) {
   std::lock_guard<std::mutex> lock(WindowMutex());
-  Windows()[anative_window] = hwnd;
+  Windows()[anative_window].hwnd = hwnd;
 }
 
 void UnregisterNativeWindow(const void* anative_window) {
@@ -595,7 +644,19 @@ void UnregisterNativeWindow(const void* anative_window) {
 HWND FindNativeWindow(const void* anative_window) {
   std::lock_guard<std::mutex> lock(WindowMutex());
   const auto it = Windows().find(anative_window);
-  return it != Windows().end() ? it->second : nullptr;
+  return it != Windows().end() ? it->second.hwnd : nullptr;
+}
+
+void SetNativeWindowRenderScale(const void* anative_window, float scale) {
+  std::lock_guard<std::mutex> lock(WindowMutex());
+  const auto it = Windows().find(anative_window);
+  if (it != Windows().end()) it->second.render_scale = RendersSmaller(scale) ? scale : 1.0f;
+}
+
+float NativeWindowRenderScale(const void* anative_window) {
+  std::lock_guard<std::mutex> lock(WindowMutex());
+  const auto it = Windows().find(anative_window);
+  return it != Windows().end() ? it->second.render_scale : 1.0f;
 }
 
 bool InitializeHostVulkan(std::string* error) {
@@ -966,9 +1027,11 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkCreateDevice(VkPhysicalDevice physica
 
   auto record = std::make_unique<vk::DeviceRecord>();
   record->physical_device = physicalDevice;
+  const char* maintenance = nullptr;
   {
     constexpr char kExclusive[] = "VK_EXT_full_screen_exclusive";
     bool instance_ready = false;
+    std::vector<std::string> instance_extensions;
     {
       State& state = GetState();
       std::lock_guard<std::mutex> lock(state.mutex);
@@ -977,9 +1040,9 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkCreateDevice(VkPhysicalDevice physica
                             : state.instances.size() == 1         ? state.instances.begin()
                                                                   : state.instances.end();
       if (instance != state.instances.end()) {
-        const std::vector<std::string>& enabled = instance->second->host_extensions;
-        instance_ready =
-            std::find(enabled.begin(), enabled.end(), "VK_KHR_get_surface_capabilities2") != enabled.end();
+        instance_extensions = instance->second->host_extensions;
+        instance_ready = std::find(instance_extensions.begin(), instance_extensions.end(),
+                                   "VK_KHR_get_surface_capabilities2") != instance_extensions.end();
       }
     }
     const bool swapchains = std::find(extensions.begin(), extensions.end(), "VK_KHR_swapchain") != extensions.end();
@@ -1000,6 +1063,23 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkCreateDevice(VkPhysicalDevice physica
           extensions.emplace_back(kExclusive);
         }
         record->exclusive_fullscreen_control = true;
+      }
+      if (enumerated == VK_SUCCESS && vk::PresentStretchWanted()) {
+        maintenance = vk::SwapchainMaintenanceExtension(instance_extensions, host_extensions);
+      }
+    }
+  }
+  VkPhysicalDeviceSwapchainMaintenance1FeaturesKHR maintenance_features{};
+  bool maintenance_added = false;
+  if (maintenance != nullptr) {
+    const auto* guest_maintenance = static_cast<const VkPhysicalDeviceSwapchainMaintenance1FeaturesKHR*>(
+        vk::FindInChain(pCreateInfo->pNext, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_KHR));
+    if (guest_maintenance != nullptr) {
+      record->present_scaling = guest_maintenance->swapchainMaintenance1 != VK_FALSE;
+    } else if (vk::HostHasSwapchainMaintenance(physicalDevice)) {
+      maintenance_added = true;
+      if (std::find(extensions.begin(), extensions.end(), maintenance) == extensions.end()) {
+        extensions.emplace_back(maintenance);
       }
     }
   }
@@ -1030,7 +1110,7 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkCreateDevice(VkPhysicalDevice physica
       &chain);
   if (result != VK_SUCCESS) return result;
 
-  const std::vector<const char*> names = vk::Pointers(extensions);
+  std::vector<const char*> names = vk::Pointers(extensions);
   VkDeviceCreateInfo host_info = *pCreateInfo;
   host_info.pNext = chain.head;
   host_info.enabledExtensionCount = static_cast<uint32_t>(names.size());
@@ -1041,8 +1121,34 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkCreateDevice(VkPhysicalDevice physica
     host_features.textureCompressionETC2 = VK_FALSE;
     host_info.pEnabledFeatures = &host_features;
   }
+  if (maintenance_added) {
+    maintenance_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_KHR;
+    maintenance_features.pNext = const_cast<void*>(chain.head);
+    maintenance_features.swapchainMaintenance1 = VK_TRUE;
+    host_info.pNext = &maintenance_features;
+  }
   result = create(physicalDevice, &host_info, nullptr, pDevice);
+  if (result != VK_SUCCESS && maintenance_added) {
+    Log("vkCreateDevice: the driver refused %s (%d); creating the device without it", maintenance,
+        static_cast<int>(result));
+    maintenance_added = false;
+    extensions.erase(std::remove(extensions.begin(), extensions.end(), std::string(maintenance)), extensions.end());
+    names = vk::Pointers(extensions);
+    host_info.pNext = chain.head;
+    host_info.enabledExtensionCount = static_cast<uint32_t>(names.size());
+    host_info.ppEnabledExtensionNames = names.empty() ? nullptr : names.data();
+    result = create(physicalDevice, &host_info, nullptr, pDevice);
+  }
   if (result != VK_SUCCESS) return result;
+  record->present_scaling = record->present_scaling || maintenance_added;
+  if (vk::PresentStretchWanted()) {
+    if (record->present_scaling) {
+      Log("vkCreateDevice: %s is on, so a smaller picture can be stretched to the window", maintenance);
+    } else {
+      vk::NotePresentStretch(false);
+      Log("vkCreateDevice: this graphics driver cannot stretch a smaller picture to the window");
+    }
+  }
 
   VkPhysicalDeviceMemoryProperties memory_properties{};
   if (const auto memory_query = ELIXIR_VK_HOST(vkGetPhysicalDeviceMemoryProperties)) {
@@ -1173,7 +1279,36 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkCreateAndroidSurfaceKHR(
   host_info.hinstance = reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(hwnd, GWLP_HINSTANCE));
   if (host_info.hinstance == nullptr) host_info.hinstance = GetModuleHandleW(nullptr);
   host_info.hwnd = hwnd;
-  return create(instance, &host_info, nullptr, pSurface);
+  const VkResult created = create(instance, &host_info, nullptr, pSurface);
+  if (created == VK_SUCCESS) vk::RememberSurfaceWindow(*pSurface, pCreateInfo->window);
+  return created;
+}
+
+ELIXIR_SYSV void elixir_vk_intercept_vkDestroySurfaceKHR(VkInstance instance, VkSurfaceKHR surface,
+                                                         const VkAllocationCallbacks* ) {
+  if (surface != VK_NULL_HANDLE) vk::ForgetSurfaceWindow(surface);
+  if (const auto destroy = ELIXIR_VK_HOST(vkDestroySurfaceKHR)) destroy(instance, surface, nullptr);
+}
+
+ELIXIR_SYSV VkResult elixir_vk_intercept_vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+    VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, VkSurfaceCapabilitiesKHR* pSurfaceCapabilities) {
+  const auto query = ELIXIR_VK_HOST(vkGetPhysicalDeviceSurfaceCapabilitiesKHR);
+  if (query == nullptr) return VK_ERROR_INITIALIZATION_FAILED;
+  const VkResult result = query(physicalDevice, surface, pSurfaceCapabilities);
+  if (result == VK_SUCCESS) vk::ScaleSurfaceCapabilitiesForGuest(surface, pSurfaceCapabilities);
+  return result;
+}
+
+ELIXIR_SYSV VkResult elixir_vk_intercept_vkGetPhysicalDeviceSurfaceCapabilities2KHR(
+    VkPhysicalDevice physicalDevice, const VkPhysicalDeviceSurfaceInfo2KHR* pSurfaceInfo,
+    VkSurfaceCapabilities2KHR* pSurfaceCapabilities) {
+  const auto query = ELIXIR_VK_HOST(vkGetPhysicalDeviceSurfaceCapabilities2KHR);
+  if (query == nullptr) return VK_ERROR_INITIALIZATION_FAILED;
+  const VkResult result = query(physicalDevice, pSurfaceInfo, pSurfaceCapabilities);
+  if (result == VK_SUCCESS && pSurfaceInfo != nullptr && pSurfaceCapabilities != nullptr) {
+    vk::ScaleSurfaceCapabilitiesForGuest(pSurfaceInfo->surface, &pSurfaceCapabilities->surfaceCapabilities);
+  }
+  return result;
 }
 
 ELIXIR_SYSV VkResult elixir_vk_intercept_vkGetPhysicalDeviceSurfacePresentModesKHR(
@@ -1200,6 +1335,7 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkCreateSwapchainKHR(VkDevice device,
   VkPhysicalDevice physical_device = VK_NULL_HANDLE;
   bool surface_maintenance = false;
   bool exclusive_fullscreen_control = false;
+  bool present_scaling = false;
   {
     State& state = GetState();
     std::lock_guard<std::mutex> lock(state.mutex);
@@ -1207,6 +1343,7 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkCreateSwapchainKHR(VkDevice device,
     if (device_record != state.devices.end()) {
       physical_device = device_record->second->physical_device;
       exclusive_fullscreen_control = device_record->second->exclusive_fullscreen_control;
+      present_scaling = device_record->second->present_scaling;
       const auto instance_record = state.instances.find(device_record->second->instance);
       surface_maintenance =
           instance_record != state.instances.end() && instance_record->second->surface_maintenance;
@@ -1227,6 +1364,30 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkCreateSwapchainKHR(VkDevice device,
       host_info = *pCreateInfo;
     }
   }
+  VkSwapchainPresentScalingCreateInfoKHR scaling{};
+  VkExtent2D window_extent{};
+  bool stretched = false;
+  if (present_scaling && physical_device != VK_NULL_HANDLE &&
+      vk::FindInChain(host_info.pNext, VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_SCALING_CREATE_INFO_KHR) == nullptr) {
+    vk::PresentScaling surface_scaling;
+    const VkResult queried =
+        vk::QueryPresentScaling(ELIXIR_VK_HOST(vkGetPhysicalDeviceSurfaceCapabilities2KHR), physical_device,
+                                host_info.surface, host_info.presentMode, &surface_scaling);
+    if (queried == VK_SUCCESS) {
+      vk::NotePresentStretch(surface_scaling.stretches);
+      window_extent = surface_scaling.current_extent;
+      stretched = surface_scaling.stretches && vk::PresentStretchState() == vk::PresentStretch::kSupported &&
+                  vk::NeedsStretch(host_info.imageExtent, window_extent);
+    } else {
+      Log("vkCreateSwapchainKHR: the surface's scaling query failed (%d)", static_cast<int>(queried));
+    }
+  }
+  if (stretched) {
+    scaling.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_SCALING_CREATE_INFO_KHR;
+    scaling.pNext = host_info.pNext;
+    scaling.scalingBehavior = VK_PRESENT_SCALING_STRETCH_BIT_KHR;
+    host_info.pNext = &scaling;
+  }
   VkSurfaceFullScreenExclusiveInfoEXT exclusive{};
   const bool composed =
       exclusive_fullscreen_control &&
@@ -1237,12 +1398,29 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkCreateSwapchainKHR(VkDevice device,
     exclusive.fullScreenExclusive = VK_FULL_SCREEN_EXCLUSIVE_DISALLOWED_EXT;
     host_info.pNext = &exclusive;
   }
-  const VkResult created = create(device, &host_info, nullptr, pSwapchain);
-  Log("swapchain %ux%u, %u images, present mode %s (the app asked for %s; policy %s)%s: %d",
+  VkResult created = create(device, &host_info, nullptr, pSwapchain);
+  if (created != VK_SUCCESS && stretched) {
+    Log("vkCreateSwapchainKHR: the driver refused a stretched %ux%u swapchain (%d); creating it without stretching",
+        host_info.imageExtent.width, host_info.imageExtent.height, static_cast<int>(created));
+    vk::NotePresentStretchRefused();
+    stretched = false;
+    if (composed) {
+      exclusive.pNext = const_cast<void*>(scaling.pNext);
+    } else {
+      host_info.pNext = scaling.pNext;
+    }
+    created = create(device, &host_info, nullptr, pSwapchain);
+  }
+  char stretch_note[64] = "";
+  if (stretched) {
+    std::snprintf(stretch_note, sizeof(stretch_note), ", stretched to the window's %ux%u", window_extent.width,
+                  window_extent.height);
+  }
+  Log("swapchain %ux%u, %u images, present mode %s (the app asked for %s; policy %s)%s%s: %d",
       host_info.imageExtent.width, host_info.imageExtent.height, host_info.minImageCount,
       vk::PresentModeKhrName(host_info.presentMode), vk::PresentModeKhrName(pCreateInfo->presentMode),
       vk::PresentModePolicyName(vk::CachedPresentModePolicy()), composed ? ", exclusive fullscreen declined" : "",
-      static_cast<int>(created));
+      stretch_note, static_cast<int>(created));
   return created;
 }
 

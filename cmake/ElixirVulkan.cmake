@@ -9,6 +9,7 @@ add_library(elixir_vulkan STATIC
   "${ELIXIR_VULKAN_SRC}/device_order.cc"
   "${ELIXIR_VULKAN_SRC}/extension_policy.cc"
   "${ELIXIR_VULKAN_SRC}/present_policy.cc"
+  "${ELIXIR_VULKAN_SRC}/present_scaling.cc"
   "${ELIXIR_VULKAN_SRC}/etc2_decoder.cc"
   "${ELIXIR_VULKAN_SRC}/etc2_emulation.cc"
   "${ELIXIR_VULKAN_SRC}/texture_override.cc"
@@ -34,7 +35,8 @@ if(BUILD_TESTING)
 
   elixir_gtest(elixir_vulkan_unit_test
     "${ELIXIR_VULKAN_TESTS}/vulkan_thunk_table_test.cc"
-    "${ELIXIR_VULKAN_TESTS}/vulkan_extension_policy_test.cc")
+    "${ELIXIR_VULKAN_TESTS}/vulkan_extension_policy_test.cc"
+    "${ELIXIR_VULKAN_TESTS}/vulkan_present_scaling_test.cc")
   target_link_libraries(elixir_vulkan_unit_test PRIVATE elixir_vulkan)
 
   elixir_gtest(elixir_vulkan_integration_test

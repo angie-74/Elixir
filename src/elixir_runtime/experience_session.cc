@@ -22,6 +22,7 @@
 #include "mocktail/status.h"
 #include "runtime/auth_runtime_composition.h"
 #include "runtime/external_launch_broker.h"
+#include "graphics/render_scale.h"
 #include "runtime/jnivm_platform_web_callbacks.h"
 #include "runtime/roblox_capability_resolver.h"
 #include "runtime/roblox_experience_composition.h"
@@ -31,8 +32,53 @@
 #include "window/window.h"
 #include "window/window_game_surface_bridge.h"
 
+#if defined(ELIXIR_RUNTIME_HAS_ANDROID)
+#include "android/android.h"
+#endif
+#if defined(ELIXIR_RUNTIME_HAS_VULKAN)
+#include "graphics/vulkan/present_scaling.h"
+#endif
+
 namespace elixir::runtime {
 namespace {
+
+struct GameScaling {
+  float wanted = 1.0f;
+  bool applied = false;
+};
+
+float GameRenderScaleForLaunch(void* context) {
+  auto* scaling = static_cast<GameScaling*>(context);
+  if (scaling == nullptr || !RendersSmaller(scaling->wanted)) return 1.0f;
+  const int percent = static_cast<int>(scaling->wanted * 100.0f + 0.5f);
+#if defined(ELIXIR_RUNTIME_HAS_VULKAN) && defined(ELIXIR_RUNTIME_HAS_ANDROID)
+  if (vulkan::PresentStretchState() == vulkan::PresentStretch::kSupported) {
+    Log("[experience] resolution scale: this game renders at " + std::to_string(percent) +
+        "% of the window's size and the graphics driver stretches it");
+    scaling->applied = true;
+    return scaling->wanted;
+  }
+#endif
+  Log("[experience] resolution scale: " + std::to_string(percent) +
+      "% is not used, because this graphics driver cannot stretch a smaller picture to the window");
+  return 1.0f;
+}
+
+void BindSurfaceRenderScale(void*, jobject surface, float render_scale) {
+#if defined(ELIXIR_RUNTIME_HAS_ANDROID)
+  android::SetSurfaceRenderScale(surface, render_scale);
+#else
+  static_cast<void>(surface);
+  static_cast<void>(render_scale);
+#endif
+}
+
+void ResetSurfaceRenderScales(void* context) {
+  if (context != nullptr) static_cast<GameScaling*>(context)->applied = false;
+#if defined(ELIXIR_RUNTIME_HAS_ANDROID)
+  android::ResetSurfaceRenderScales();
+#endif
+}
 
 namespace mr = mocktail::runtime;
 namespace mw = mocktail::window;
@@ -175,6 +221,7 @@ const char* JoinState(mr::RobloxExperiencePresencePhase phase) {
 struct ExperienceSession::Impl {
   jnivm::VM* vm = nullptr;
   mw::ScopedPresentObserver present_observer;
+  GameScaling scaling;
   PresenceState presence;
   std::uint64_t presence_reported = 0;
   std::function<void(bool)> in_game_changed;
@@ -257,6 +304,11 @@ std::unique_ptr<ExperienceSession> ExperienceSession::Create(void* roblox, jnivm
   surface_config.is_touch_device = options.touch_enabled;
   surface_config.is_mouse_device = options.mouse_enabled;
   surface_config.is_keyboard_device = options.keyboard_enabled;
+  impl->scaling.wanted = RendersSmaller(options.game_render_scale) ? options.game_render_scale : 1.0f;
+  surface_config.scaling_context = &impl->scaling;
+  surface_config.game_render_scale = &GameRenderScaleForLaunch;
+  surface_config.bind_surface_scale = &BindSurfaceRenderScale;
+  surface_config.reset_surface_scales = &ResetSurfaceRenderScales;
   if (!surface_config.complete()) return fail("the game surface's PlatformParams are incomplete (no asset path)");
   const mr::JniEnvironmentProvider environment{vm->GetJavaVM(), vm, &RestoreJniFunctions};
   mr::SecureRobloxCredential web_credential;
@@ -363,6 +415,14 @@ bool ExperienceSession::DrainSurfaceEvents() {
 bool ExperienceSession::DrainPlatformEvents() {
   Impl& s = *impl_;
   if (s.composition == nullptr || s.shut_down) return true;
+#if defined(ELIXIR_RUNTIME_HAS_VULKAN)
+  if (s.scaling.applied && vulkan::PresentStretchState() == vulkan::PresentStretch::kUnsupported &&
+      s.composition->DropGameRenderScale()) {
+    s.scaling.applied = false;
+    Log("[experience] resolution scale: the graphics driver did not take the smaller picture, so this game "
+        "renders at the window's size");
+  }
+#endif
   const mocktail::Status status = s.composition->DrainPlatformEvents();
   if (!status.ok()) {
     LogError("[experience] Roblox's platform events failed: " + status.message());

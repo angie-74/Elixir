@@ -921,6 +921,7 @@ ELIXIR_SYSV void elixir_vk_intercept_vkDestroyDebugUtilsMessengerEXT(VkInstance 
 ELIXIR_SYSV void elixir_vk_intercept_vkDestroyDevice(VkDevice device, const VkAllocationCallbacks* pAllocator);
 ELIXIR_SYSV void elixir_vk_intercept_vkDestroyImage(VkDevice device, VkImage image, const VkAllocationCallbacks* pAllocator);
 ELIXIR_SYSV void elixir_vk_intercept_vkDestroyInstance(VkInstance instance, const VkAllocationCallbacks* pAllocator);
+ELIXIR_SYSV void elixir_vk_intercept_vkDestroySurfaceKHR(VkInstance instance, VkSurfaceKHR surface, const VkAllocationCallbacks* pAllocator);
 ELIXIR_SYSV VkResult elixir_vk_intercept_vkEnumerateDeviceExtensionProperties(VkPhysicalDevice physicalDevice, const char* pLayerName, uint32_t* pPropertyCount, VkExtensionProperties* pProperties);
 ELIXIR_SYSV VkResult elixir_vk_intercept_vkEnumerateInstanceExtensionProperties(const char* pLayerName, uint32_t* pPropertyCount, VkExtensionProperties* pProperties);
 ELIXIR_SYSV VkResult elixir_vk_intercept_vkEnumerateInstanceLayerProperties(uint32_t* pPropertyCount, VkLayerProperties* pProperties);
@@ -952,6 +953,8 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkGetPhysicalDeviceImageFormatPropertie
 ELIXIR_SYSV void elixir_vk_intercept_vkGetPhysicalDeviceProperties(VkPhysicalDevice physicalDevice, VkPhysicalDeviceProperties* pProperties);
 ELIXIR_SYSV void elixir_vk_intercept_vkGetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice, VkPhysicalDeviceProperties2* pProperties);
 ELIXIR_SYSV void elixir_vk_intercept_vkGetPhysicalDeviceProperties2KHR(VkPhysicalDevice physicalDevice, VkPhysicalDeviceProperties2* pProperties);
+ELIXIR_SYSV VkResult elixir_vk_intercept_vkGetPhysicalDeviceSurfaceCapabilities2KHR(VkPhysicalDevice physicalDevice, const VkPhysicalDeviceSurfaceInfo2KHR* pSurfaceInfo, VkSurfaceCapabilities2KHR* pSurfaceCapabilities);
+ELIXIR_SYSV VkResult elixir_vk_intercept_vkGetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, VkSurfaceCapabilitiesKHR* pSurfaceCapabilities);
 ELIXIR_SYSV VkResult elixir_vk_intercept_vkGetPhysicalDeviceSurfacePresentModesKHR(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, uint32_t* pPresentModeCount, VkPresentModeKHR* pPresentModes);
 ELIXIR_SYSV VkResult elixir_vk_intercept_vkMapMemory(VkDevice device, VkDeviceMemory memory, VkDeviceSize offset, VkDeviceSize size, VkMemoryMapFlags flags, void** ppData);
 ELIXIR_SYSV VkResult elixir_vk_intercept_vkMapMemory2(VkDevice device, const VkMemoryMapInfo* pMemoryMapInfo, void** ppData);

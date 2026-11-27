@@ -14,6 +14,7 @@
 
 #include "android/android_internal.h"
 #include "bionic/runtime.h"
+#include "graphics/render_scale.h"
 
 #if defined(ELIXIR_ANDROID_WITH_VULKAN)
 #include "graphics/vulkan/guest_vulkan.h"
@@ -57,6 +58,7 @@ struct ANativeWindow {
   int user_width = 0;
   int user_height = 0;
   std::int32_t user_format = 0;
+  float render_scale = 1.0f;
   bool abandoned = false;
   bool locked = false;
   bool surface_window = false;
@@ -72,8 +74,12 @@ struct ANativeWindow {
   std::uint64_t posted_frames = 0;
   std::uint64_t presented_frames = 0;
 
-  int Width() const { return user_width != 0 ? user_width : default_width; }
-  int Height() const { return user_height != 0 ? user_height : default_height; }
+  int Width() const {
+    return user_width != 0 ? user_width : static_cast<int>(elixir::ScaledExtent(default_width, render_scale));
+  }
+  int Height() const {
+    return user_height != 0 ? user_height : static_cast<int>(elixir::ScaledExtent(default_height, render_scale));
+  }
   std::int32_t Format() const { return user_format != 0 ? user_format : kFormatRgba8888; }
 };
 
@@ -89,6 +95,7 @@ struct Registry {
   std::mutex mutex;
   std::unordered_map<ANativeWindow*, std::uint64_t> live;
   std::unordered_map<const void*, SurfaceAssociation> surfaces;
+  std::unordered_map<const void*, float> surface_scales;
   std::uint64_t next_order = 1;
 };
 
@@ -103,7 +110,12 @@ void FreeWindow(ANativeWindow* window) noexcept {
     std::lock_guard<std::mutex> lock(registry.mutex);
     registry.live.erase(window);
     for (auto it = registry.surfaces.begin(); it != registry.surfaces.end();) {
-      it = it->second.window == window ? registry.surfaces.erase(it) : std::next(it);
+      if (it->second.window == window) {
+        registry.surface_scales.erase(it->first);
+        it = registry.surfaces.erase(it);
+      } else {
+        ++it;
+      }
     }
     for (const auto& [other, order] : registry.live) {
       if (other->parent == window) other->parent = nullptr;
@@ -173,6 +185,9 @@ ANativeWindow* CreateSurfaceWindow(ANativeWindow* parent, const void* surface) n
         window->hwnd = parent->hwnd;
         window->default_width = parent->default_width;
         window->default_height = parent->default_height;
+        if (const auto scale = registry.surface_scales.find(surface); scale != registry.surface_scales.end()) {
+          window->render_scale = scale->second;
+        }
         try {
           registry.live.emplace(window, registry.next_order++);
           try {
@@ -186,7 +201,10 @@ ANativeWindow* CreateSurfaceWindow(ANativeWindow* parent, const void* surface) n
         } catch (...) {
         }
 #if defined(ELIXIR_ANDROID_WITH_VULKAN)
-        if (published && window->hwnd != nullptr) vulkan::RegisterNativeWindow(window, window->hwnd);
+        if (published && window->hwnd != nullptr) {
+          vulkan::RegisterNativeWindow(window, window->hwnd);
+          vulkan::SetNativeWindowRenderScale(window, window->render_scale);
+        }
 #endif
       }
     }
@@ -195,9 +213,26 @@ ANativeWindow* CreateSurfaceWindow(ANativeWindow* parent, const void* surface) n
     delete window;
     return existing;
   }
-  Log(kLogInfo, "ANativeWindow %p for Java Surface %p (HWND %p, %dx%d)", static_cast<void*>(window), surface,
-      static_cast<void*>(window->hwnd), window->default_width, window->default_height);
+  if (elixir::RendersSmaller(window->render_scale)) {
+    Log(kLogInfo, "ANativeWindow %p for Java Surface %p (HWND %p, %dx%d, rendered at %dx%d)",
+        static_cast<void*>(window), surface, static_cast<void*>(window->hwnd), window->default_width,
+        window->default_height, window->Width(), window->Height());
+  } else {
+    Log(kLogInfo, "ANativeWindow %p for Java Surface %p (HWND %p, %dx%d)", static_cast<void*>(window), surface,
+        static_cast<void*>(window->hwnd), window->default_width, window->default_height);
+  }
   return window;
+}
+
+void ApplyRenderScale(ANativeWindow* window, float scale) noexcept {
+  {
+    std::lock_guard<std::mutex> lock(window->mutex);
+    if (window->render_scale != scale) window->geometry_changed = true;
+    window->render_scale = scale;
+  }
+#if defined(ELIXIR_ANDROID_WITH_VULKAN)
+  vulkan::SetNativeWindowRenderScale(window, scale);
+#endif
 }
 
 void SetDefaultSize(ANativeWindow* window, int width, int height) noexcept {
@@ -424,6 +459,56 @@ void AssociateSurface(const void* java_surface, ANativeWindow* window) {
     }
   }
   if (dropped != nullptr) Release(dropped);
+}
+
+void SetSurfaceRenderScale(const void* java_surface, float scale) {
+  if (java_surface == nullptr) return;
+  if (!elixir::RendersSmaller(scale)) scale = 1.0f;
+  ANativeWindow* window = nullptr;
+  {
+    Registry& registry = GetRegistry();
+    std::lock_guard<std::mutex> lock(registry.mutex);
+    if (scale == 1.0f) {
+      registry.surface_scales.erase(java_surface);
+    } else {
+      try {
+        registry.surface_scales[java_surface] = scale;
+      } catch (...) {
+        return;
+      }
+    }
+    const auto it = registry.surfaces.find(java_surface);
+    if (it != registry.surfaces.end() && it->second.window->surface_window && TryAcquire(it->second.window)) {
+      window = it->second.window;
+    }
+  }
+  if (window == nullptr) return;
+  ApplyRenderScale(window, scale);
+  Release(window);
+}
+
+void SetNativeWindowRenderScale(ANativeWindow* window, float scale) {
+  if (window == nullptr) return;
+  ApplyRenderScale(window, elixir::RendersSmaller(scale) ? scale : 1.0f);
+}
+
+void ResetSurfaceRenderScales() {
+  std::vector<ANativeWindow*> scaled;
+  {
+    Registry& registry = GetRegistry();
+    std::lock_guard<std::mutex> lock(registry.mutex);
+    registry.surface_scales.clear();
+    try {
+      for (const auto& [window, order] : registry.live) {
+        if (window->surface_window && TryAcquire(window)) scaled.push_back(window);
+      }
+    } catch (...) {
+    }
+  }
+  for (ANativeWindow* window : scaled) {
+    ApplyRenderScale(window, 1.0f);
+    Release(window);
+  }
 }
 
 bool GetNativeWindowInfo(ANativeWindow* window, NativeWindowInfo* info) {

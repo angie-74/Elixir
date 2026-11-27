@@ -127,6 +127,7 @@ class RobloxExperienceComposition final {
   Status LeaveGame();
   GameSessionUpdateResult SurfaceCreated(uint64_t generation);
   GameSessionUpdateResult SurfaceChanged(GameSurface surface);
+  bool DropGameRenderScale();
   GameSessionUpdateResult SurfaceDestroyed(uint64_t generation);
   Status Shutdown();
 
@@ -267,6 +268,7 @@ class RobloxExperienceComposition final {
   bool lua_app_surface_recreation_pending_ = false;
   bool late_surface_tracking_ = false;
   GameSurface late_surface_snapshot_;
+  float game_render_scale_ = 1.0f;
   jnivm::VM* late_lifecycle_vm_ = nullptr;
 };
 

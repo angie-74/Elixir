@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "graphics/render_scale.h"
 #include "mocktail/status.h"
 #include "runtime/game_session_coordinator.h"
 #include "runtime/roblox_app_lifecycle.h"
@@ -111,12 +112,55 @@ struct RobloxGameSurfaceJniConfig {
   bool is_touch_device = false;
   bool is_mouse_device = true;
   bool is_keyboard_device = true;
+  void* scaling_context = nullptr;
+  float (*game_render_scale)(void* context) = nullptr;
+  void (*bind_surface_scale)(void* context, jobject surface,
+                             float render_scale) = nullptr;
+  void (*reset_surface_scales)(void* context) = nullptr;
 
   bool complete() const {
     return !asset_folder_path.empty() && dpi_scale > 0.0f &&
            viewport_width_mm > 0 && viewport_height_mm > 0;
   }
+
+  float GameRenderScale() const {
+    const float scale = game_render_scale != nullptr
+                            ? game_render_scale(scaling_context)
+                            : 1.0f;
+    return elixir::RendersSmaller(scale) ? scale : 1.0f;
+  }
+
+  void BindSurfaceScale(jobject surface, float render_scale) const {
+    if (bind_surface_scale != nullptr && surface != nullptr) {
+      bind_surface_scale(scaling_context, surface,
+                         elixir::RendersSmaller(render_scale) ? render_scale
+                                                              : 1.0f);
+    }
+  }
+
+  void ResetSurfaceScales() const {
+    if (reset_surface_scales != nullptr) {
+      reset_surface_scales(scaling_context);
+    }
+  }
 };
+
+inline GameSurface ScaledGameSurface(GameSurface surface, float scale,
+                                     float fallback_dpi_scale) {
+  if (!elixir::RendersSmaller(scale)) {
+    surface.render_scale = 1.0f;
+    return surface;
+  }
+  surface.width =
+      static_cast<uint32_t>(elixir::ScaledExtent(surface.width, scale));
+  surface.height =
+      static_cast<uint32_t>(elixir::ScaledExtent(surface.height, scale));
+  surface.dpi_scale =
+      (surface.dpi_scale > 0.0f ? surface.dpi_scale : fallback_dpi_scale) *
+      scale;
+  surface.render_scale = scale;
+  return surface;
+}
 
 struct RobloxGameSessionBinding {
   RobloxGameSessionJniObjects objects;

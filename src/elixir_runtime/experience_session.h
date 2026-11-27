@@ -21,6 +21,7 @@ namespace elixir::runtime {
 struct ExperienceSessionOptions {
   std::string asset_folder_path;
   float dpi_scale = 1.0f;
+  float game_render_scale = 1.0f;
   bool touch_enabled = false;
   bool mouse_enabled = true;
   bool keyboard_enabled = true;

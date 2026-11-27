@@ -750,6 +750,7 @@ Status RobloxGameSessionNativeAdapter::CreateSurfaceObjectLocked(
     env->DeleteLocalRef(object);
     return status;
   }
+  surface_config_.BindSurfaceScale(object, surface.render_scale);
   *result = object;
   return Status::Ok();
 }

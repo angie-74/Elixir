@@ -40,6 +40,9 @@ ANativeWindow* CreateNativeWindow(HWND hwnd, int width, int height);
 void ResizeNativeWindow(ANativeWindow* window, int width, int height);
 void DestroyNativeWindow(ANativeWindow* window);
 void AssociateSurface(const void* java_surface, ANativeWindow* window);
+void SetSurfaceRenderScale(const void* java_surface, float scale);
+void SetNativeWindowRenderScale(ANativeWindow* window, float scale);
+void ResetSurfaceRenderScales();
 
 struct NativeWindowInfo {
   HWND hwnd = nullptr;

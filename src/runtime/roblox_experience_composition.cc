@@ -1366,6 +1366,9 @@ Status RobloxExperienceComposition::DrainLaunchRequests() {
   }
   if (returned_controller != nullptr) {
     const Status observed = returned_controller->ObserveLuaAppReturn();
+    GameSurface app_surface;
+    bool game_was_scaled = false;
+    bool restore_app_surface = false;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (!observed.ok()) {
@@ -1378,8 +1381,28 @@ Status RobloxExperienceComposition::DrainLaunchRequests() {
       presence_request_.reset();
       playing_presence_published_ = false;
       controlled_switch_waiting_for_return_ = false;
+      game_was_scaled = elixir::RendersSmaller(game_render_scale_);
+      restore_app_surface =
+          game_was_scaled && !lua_app_surface_recreation_pending_;
+      game_render_scale_ = 1.0f;
+      app_surface = readiness_.surface;
     }
     NotifyPresence(RobloxExperiencePresencePhase::kBrowsing, nullptr);
+    if (game_was_scaled) {
+      surface_config_.ResetSurfaceScales();
+    }
+    if (restore_app_surface && app_surface.generation != 0 &&
+        app_surface.native_window != 0 && app_surface.width != 0 &&
+        app_surface.height != 0) {
+      std::lock_guard<std::mutex> operation_lock(surface_operation_mutex_);
+      const Status restored = RebindLuaAppSurface(app_surface);
+      if (!restored.ok()) {
+        std::fprintf(stderr,
+                     "[experience] Roblox's app keeps the game's smaller "
+                     "surface: %s\n",
+                     restored.message().c_str());
+      }
+    }
   }
 
   Status external_launch_status = DrainExternalLaunchRequests();
@@ -1438,7 +1461,9 @@ Status RobloxExperienceComposition::DrainLaunchRequests() {
     task->context.activity = objects_->activity;
     task->context.vr_context = objects_->activity;
     task->context.principal = readiness_.principal;
-    task->context.game_surface = readiness_.surface;
+    game_render_scale_ = surface_config_.GameRenderScale();
+    task->context.game_surface = ScaledGameSurface(
+        readiness_.surface, game_render_scale_, surface_config_.dpi_scale);
     task->context.username = readiness_.username;
     task->context.is_under_13 = readiness_.is_under_13;
     task->context.join_request_type = JoinRequestTypeFor(task->request);
@@ -1601,15 +1626,19 @@ GameSessionUpdateResult RobloxExperienceComposition::SurfaceChanged(
   std::shared_ptr<RobloxFreshGameLaunchController> controller;
   bool forward = false;
   bool recreate_lua_app = false;
+  float game_render_scale = 1.0f;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     controller = controller_;
     forward = game_active_;
     recreate_lua_app = !forward && lua_app_surface_recreation_pending_;
+    game_render_scale = game_render_scale_;
   }
+  surface.render_scale = 1.0f;
   GameSessionUpdateResult result =
       forward && controller != nullptr
-          ? controller->RebindSurface(surface)
+          ? controller->RebindSurface(ScaledGameSurface(
+                surface, game_render_scale, surface_config_.dpi_scale))
           : AcceptedLuaAppSurface("LuaApp surface rebound");
   if (!forward) {
     const Status status = recreate_lua_app ? RestartLuaAppSurface(surface)
@@ -1626,6 +1655,40 @@ GameSessionUpdateResult RobloxExperienceComposition::SurfaceChanged(
     }
   }
   return result;
+}
+
+bool RobloxExperienceComposition::DropGameRenderScale() {
+  std::lock_guard<std::mutex> operation_lock(surface_operation_mutex_);
+  std::shared_ptr<RobloxFreshGameLaunchController> controller;
+  GameSurface surface;
+  bool forward = false;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!elixir::RendersSmaller(game_render_scale_)) {
+      return true;
+    }
+    if (launch_in_progress_ || active_launch_ != nullptr) {
+      return false;
+    }
+    game_render_scale_ = 1.0f;
+    controller = controller_;
+    forward = game_active_;
+    surface = readiness_.surface;
+  }
+  surface_config_.ResetSurfaceScales();
+  surface.render_scale = 1.0f;
+  if (forward && controller != nullptr && surface.generation != 0 &&
+      surface.native_window != 0 && surface.width != 0 &&
+      surface.height != 0) {
+    const GameSessionUpdateResult result = controller->RebindSurface(surface);
+    if (!result.ok()) {
+      std::fprintf(stderr,
+                   "[experience] the game keeps its smaller surface "
+                   "parameters: %s\n",
+                   result.cause.message().c_str());
+    }
+  }
+  return true;
 }
 
 GameSessionUpdateResult RobloxExperienceComposition::SurfaceDestroyed(
@@ -1910,6 +1973,9 @@ Status RobloxExperienceComposition::BuildLaunchObjects(
                            JNI_TRUE);
     status = populated ? CheckJni(env, "populate fresh launch Surface")
                        : Unavailable("required Surface fields are unavailable");
+  }
+  if (status.ok()) {
+    surface_config_.BindSurfaceScale(surface_local, surface.render_scale);
   }
 
   jclass params_class = nullptr;

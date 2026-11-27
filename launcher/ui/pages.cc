@@ -689,7 +689,7 @@ float App::BuildSettings(Ui& ui, float x, float y, float width) {
   {
     double resolution = config_.graphics.resolution_scale;
     cy = SettingRow(ui, cx, cy, cw, L"Resolution scale",
-                    L"Saved for launch. The render surface currently follows the window size.",
+                    L"Lower values give more FPS in games. Menus stay sharp.",
                     300.0f, 32.0f, &control, true);
     if (ui.Slider(L"settings.scale", control, &resolution, kResolutionScaleMin, kResolutionScaleMax, 0.05,
                   L"Resolution scale", FormatPercent(resolution))) {

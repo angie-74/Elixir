@@ -1764,10 +1764,6 @@ ELIXIR_SYSV void elixir_vk_sysv_vkDestroyShaderModule(VkDevice device, VkShaderM
   ELIXIR_VK_HOST(vkDestroyShaderModule)(device, shaderModule, nullptr);
 }
 
-ELIXIR_SYSV void elixir_vk_sysv_vkDestroySurfaceKHR(VkInstance instance, VkSurfaceKHR surface, const VkAllocationCallbacks*) {
-  ELIXIR_VK_HOST(vkDestroySurfaceKHR)(instance, surface, nullptr);
-}
-
 ELIXIR_SYSV void elixir_vk_sysv_vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain, const VkAllocationCallbacks*) {
   ELIXIR_VK_HOST(vkDestroySwapchainKHR)(device, swapchain, nullptr);
 }
@@ -2370,14 +2366,6 @@ ELIXIR_SYSV VkResult elixir_vk_sysv_vkGetPhysicalDeviceSupportedFramebufferMixed
 
 ELIXIR_SYSV VkResult elixir_vk_sysv_vkGetPhysicalDeviceSurfaceCapabilities2EXT(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, VkSurfaceCapabilities2EXT* pSurfaceCapabilities) {
   return ELIXIR_VK_HOST(vkGetPhysicalDeviceSurfaceCapabilities2EXT)(physicalDevice, surface, pSurfaceCapabilities);
-}
-
-ELIXIR_SYSV VkResult elixir_vk_sysv_vkGetPhysicalDeviceSurfaceCapabilities2KHR(VkPhysicalDevice physicalDevice, const VkPhysicalDeviceSurfaceInfo2KHR* pSurfaceInfo, VkSurfaceCapabilities2KHR* pSurfaceCapabilities) {
-  return ELIXIR_VK_HOST(vkGetPhysicalDeviceSurfaceCapabilities2KHR)(physicalDevice, pSurfaceInfo, pSurfaceCapabilities);
-}
-
-ELIXIR_SYSV VkResult elixir_vk_sysv_vkGetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, VkSurfaceCapabilitiesKHR* pSurfaceCapabilities) {
-  return ELIXIR_VK_HOST(vkGetPhysicalDeviceSurfaceCapabilitiesKHR)(physicalDevice, surface, pSurfaceCapabilities);
 }
 
 ELIXIR_SYSV VkResult elixir_vk_sysv_vkGetPhysicalDeviceSurfaceFormats2KHR(VkPhysicalDevice physicalDevice, const VkPhysicalDeviceSurfaceInfo2KHR* pSurfaceInfo, uint32_t* pSurfaceFormatCount, VkSurfaceFormat2KHR* pSurfaceFormats) {
@@ -3328,7 +3316,7 @@ ELIXIR_VK_SIGNATURE(vkDestroySemaphore, elixir_vk_sysv_vkDestroySemaphore)
 ELIXIR_VK_SIGNATURE(vkDestroyShaderEXT, elixir_vk_sysv_vkDestroyShaderEXT)
 ELIXIR_VK_SIGNATURE(vkDestroyShaderInstrumentationARM, elixir_vk_sysv_vkDestroyShaderInstrumentationARM)
 ELIXIR_VK_SIGNATURE(vkDestroyShaderModule, elixir_vk_sysv_vkDestroyShaderModule)
-ELIXIR_VK_SIGNATURE(vkDestroySurfaceKHR, elixir_vk_sysv_vkDestroySurfaceKHR)
+ELIXIR_VK_SIGNATURE(vkDestroySurfaceKHR, elixir_vk_intercept_vkDestroySurfaceKHR)
 ELIXIR_VK_SIGNATURE(vkDestroySwapchainKHR, elixir_vk_sysv_vkDestroySwapchainKHR)
 ELIXIR_VK_SIGNATURE(vkDestroyTensorARM, elixir_vk_sysv_vkDestroyTensorARM)
 ELIXIR_VK_SIGNATURE(vkDestroyTensorViewARM, elixir_vk_sysv_vkDestroyTensorViewARM)
@@ -3511,8 +3499,8 @@ ELIXIR_VK_SIGNATURE(vkGetPhysicalDeviceSparseImageFormatProperties2, elixir_vk_s
 ELIXIR_VK_SIGNATURE(vkGetPhysicalDeviceSparseImageFormatProperties2KHR, elixir_vk_sysv_vkGetPhysicalDeviceSparseImageFormatProperties2KHR)
 ELIXIR_VK_SIGNATURE(vkGetPhysicalDeviceSupportedFramebufferMixedSamplesCombinationsNV, elixir_vk_sysv_vkGetPhysicalDeviceSupportedFramebufferMixedSamplesCombinationsNV)
 ELIXIR_VK_SIGNATURE(vkGetPhysicalDeviceSurfaceCapabilities2EXT, elixir_vk_sysv_vkGetPhysicalDeviceSurfaceCapabilities2EXT)
-ELIXIR_VK_SIGNATURE(vkGetPhysicalDeviceSurfaceCapabilities2KHR, elixir_vk_sysv_vkGetPhysicalDeviceSurfaceCapabilities2KHR)
-ELIXIR_VK_SIGNATURE(vkGetPhysicalDeviceSurfaceCapabilitiesKHR, elixir_vk_sysv_vkGetPhysicalDeviceSurfaceCapabilitiesKHR)
+ELIXIR_VK_SIGNATURE(vkGetPhysicalDeviceSurfaceCapabilities2KHR, elixir_vk_intercept_vkGetPhysicalDeviceSurfaceCapabilities2KHR)
+ELIXIR_VK_SIGNATURE(vkGetPhysicalDeviceSurfaceCapabilitiesKHR, elixir_vk_intercept_vkGetPhysicalDeviceSurfaceCapabilitiesKHR)
 ELIXIR_VK_SIGNATURE(vkGetPhysicalDeviceSurfaceFormats2KHR, elixir_vk_sysv_vkGetPhysicalDeviceSurfaceFormats2KHR)
 ELIXIR_VK_SIGNATURE(vkGetPhysicalDeviceSurfaceFormatsKHR, elixir_vk_sysv_vkGetPhysicalDeviceSurfaceFormatsKHR)
 ELIXIR_VK_SIGNATURE(vkGetPhysicalDeviceSurfacePresentModesKHR, elixir_vk_intercept_vkGetPhysicalDeviceSurfacePresentModesKHR)
@@ -4119,7 +4107,7 @@ const CommandInfo kCommands[kCommandCount] = {
     {"vkDestroyShaderEXT", ELIXIR_VK_PROC(elixir_vk_sysv_vkDestroyShaderEXT), 0, "VK_EXT_shader_object", CommandLevel::kDevice, 0},
     {"vkDestroyShaderInstrumentationARM", ELIXIR_VK_PROC(elixir_vk_sysv_vkDestroyShaderInstrumentationARM), 0, "VK_ARM_shader_instrumentation", CommandLevel::kDevice, 0},
     {"vkDestroyShaderModule", ELIXIR_VK_PROC(elixir_vk_sysv_vkDestroyShaderModule), VK_API_VERSION_1_0, nullptr, CommandLevel::kDevice, kCommandCore | kCommandLibvulkanExport},
-    {"vkDestroySurfaceKHR", ELIXIR_VK_PROC(elixir_vk_sysv_vkDestroySurfaceKHR), 0, "VK_KHR_surface", CommandLevel::kInstance, kCommandLibvulkanExport},
+    {"vkDestroySurfaceKHR", ELIXIR_VK_PROC(elixir_vk_intercept_vkDestroySurfaceKHR), 0, "VK_KHR_surface", CommandLevel::kInstance, kCommandIntercepted | kCommandLibvulkanExport},
     {"vkDestroySwapchainKHR", ELIXIR_VK_PROC(elixir_vk_sysv_vkDestroySwapchainKHR), 0, "VK_KHR_swapchain", CommandLevel::kDevice, kCommandLibvulkanExport},
     {"vkDestroyTensorARM", ELIXIR_VK_PROC(elixir_vk_sysv_vkDestroyTensorARM), 0, "VK_ARM_tensors", CommandLevel::kDevice, 0},
     {"vkDestroyTensorViewARM", ELIXIR_VK_PROC(elixir_vk_sysv_vkDestroyTensorViewARM), 0, "VK_ARM_tensors", CommandLevel::kDevice, 0},
@@ -4307,8 +4295,8 @@ const CommandInfo kCommands[kCommandCount] = {
     {"vkGetPhysicalDeviceSparseImageFormatProperties2KHR", ELIXIR_VK_PROC(elixir_vk_sysv_vkGetPhysicalDeviceSparseImageFormatProperties2KHR), 0, "VK_KHR_get_physical_device_properties2", CommandLevel::kInstance, kCommandAlias},
     {"vkGetPhysicalDeviceSupportedFramebufferMixedSamplesCombinationsNV", ELIXIR_VK_PROC(elixir_vk_sysv_vkGetPhysicalDeviceSupportedFramebufferMixedSamplesCombinationsNV), 0, "VK_NV_coverage_reduction_mode", CommandLevel::kInstance, 0},
     {"vkGetPhysicalDeviceSurfaceCapabilities2EXT", ELIXIR_VK_PROC(elixir_vk_sysv_vkGetPhysicalDeviceSurfaceCapabilities2EXT), 0, "VK_EXT_display_surface_counter", CommandLevel::kInstance, 0},
-    {"vkGetPhysicalDeviceSurfaceCapabilities2KHR", ELIXIR_VK_PROC(elixir_vk_sysv_vkGetPhysicalDeviceSurfaceCapabilities2KHR), 0, "VK_KHR_get_surface_capabilities2", CommandLevel::kInstance, 0},
-    {"vkGetPhysicalDeviceSurfaceCapabilitiesKHR", ELIXIR_VK_PROC(elixir_vk_sysv_vkGetPhysicalDeviceSurfaceCapabilitiesKHR), 0, "VK_KHR_surface", CommandLevel::kInstance, kCommandLibvulkanExport},
+    {"vkGetPhysicalDeviceSurfaceCapabilities2KHR", ELIXIR_VK_PROC(elixir_vk_intercept_vkGetPhysicalDeviceSurfaceCapabilities2KHR), 0, "VK_KHR_get_surface_capabilities2", CommandLevel::kInstance, kCommandIntercepted},
+    {"vkGetPhysicalDeviceSurfaceCapabilitiesKHR", ELIXIR_VK_PROC(elixir_vk_intercept_vkGetPhysicalDeviceSurfaceCapabilitiesKHR), 0, "VK_KHR_surface", CommandLevel::kInstance, kCommandIntercepted | kCommandLibvulkanExport},
     {"vkGetPhysicalDeviceSurfaceFormats2KHR", ELIXIR_VK_PROC(elixir_vk_sysv_vkGetPhysicalDeviceSurfaceFormats2KHR), 0, "VK_KHR_get_surface_capabilities2", CommandLevel::kInstance, 0},
     {"vkGetPhysicalDeviceSurfaceFormatsKHR", ELIXIR_VK_PROC(elixir_vk_sysv_vkGetPhysicalDeviceSurfaceFormatsKHR), 0, "VK_KHR_surface", CommandLevel::kInstance, kCommandLibvulkanExport},
     {"vkGetPhysicalDeviceSurfacePresentModes2EXT", nullptr, 0, "VK_EXT_full_screen_exclusive", CommandLevel::kInstance, kCommandHostOnly},
