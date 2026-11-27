@@ -261,19 +261,42 @@ main > section,
 }
 
 .notice {
-  max-width: 500px;
-  margin: 24px auto 0;
-  padding: 12px 18px;
-  border: 1px solid var(--edge);
+  max-width: 480px;
+  margin: 22px auto 0;
+  padding: 13px 18px;
+  border: 1px solid rgba(250, 204, 21, 0.5);
   border-radius: 12px;
-  color: var(--muted);
+  background: rgba(250, 204, 21, 0.1);
+  color: #f4dc8a;
   font-size: 14.5px;
   line-height: 1.5;
+  transform-origin: 50% 0;
 }
 
 .notice strong {
-  color: var(--text);
-  font-weight: 600;
+  color: #fff3c4;
+  font-weight: 650;
+}
+
+.notice.again {
+  animation: pop 0.5s var(--ease) both;
+}
+
+@keyframes pop {
+  0% {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.92);
+  }
+
+  60% {
+    opacity: 1;
+    transform: translateY(0) scale(1.03);
+  }
+
+  100% {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .window {
@@ -292,13 +315,16 @@ main > section,
 .hero h1,
 .hero .lead,
 .hero .actions,
-.hero .notice,
 .hero .window {
   animation: rise 0.7s var(--ease) both;
 }
 
 .hero .notice {
-  animation-delay: 0.19s;
+  animation: pop 0.55s var(--ease) 0.55s both;
+}
+
+.hero .notice.again {
+  animation: pop 0.5s var(--ease) both;
 }
 
 .hero .lead {
@@ -434,6 +460,30 @@ main > section,
   border-top: 1px solid var(--edge);
 }
 
+.js .answers details:nth-child(2) {
+  transition-delay: 0.06s;
+}
+
+.js .answers details:nth-child(3) {
+  transition-delay: 0.12s;
+}
+
+.js .answers details:nth-child(4) {
+  transition-delay: 0.18s;
+}
+
+.js .answers details:nth-child(5) {
+  transition-delay: 0.24s;
+}
+
+.js .answers details:nth-child(6) {
+  transition-delay: 0.3s;
+}
+
+.js .answers details:nth-child(7) {
+  transition-delay: 0.36s;
+}
+
 .answers summary {
   cursor: pointer;
   list-style: none;
@@ -444,13 +494,20 @@ main > section,
   padding: 20px 8px;
   font-size: 1.1rem;
   font-weight: 600;
+  color: #d9d9de;
   border-radius: 8px;
-  transition: background 0.15s ease;
+  transition: color 0.2s ease, background 0.2s ease, padding 0.25s var(--ease);
 }
 
 .answers summary:hover,
 .answers summary:focus-visible {
+  color: var(--text);
   background: rgba(255, 255, 255, 0.04);
+  padding-left: 14px;
+}
+
+.answers details[open]:not(.closing) summary {
+  color: var(--text);
 }
 
 .answers summary:focus,
@@ -469,33 +526,26 @@ main > section,
   height: 9px;
   border-right: 2px solid var(--muted);
   border-bottom: 2px solid var(--muted);
-  transform: rotate(45deg);
-  transition: transform 0.25s var(--ease);
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 0.35s var(--ease), border-color 0.2s ease;
   margin-right: 6px;
 }
 
-.answers details[open] summary::after {
-  transform: rotate(-135deg);
+.answers summary:hover::after {
+  border-color: var(--text);
 }
 
-.answers details p {
+.answers details[open]:not(.closing) summary::after {
+  transform: translateY(2px) rotate(-135deg);
+  border-color: var(--text);
+}
+
+.answer {
+  overflow: hidden;
+}
+
+.answer p {
   padding: 0 8px 22px;
-}
-
-.answers details[open] p {
-  animation: answer 0.3s var(--ease) both;
-}
-
-@keyframes answer {
-  from {
-    opacity: 0;
-    transform: translateY(-6px);
-  }
-
-  to {
-    opacity: 1;
-    transform: none;
-  }
 }
 
 .bottom {
@@ -592,7 +642,7 @@ main > section,
   .hero .actions,
   .hero .notice,
   .hero .window,
-  .answers details[open] p {
+  .hero .notice.again {
     animation: none;
   }
 
@@ -604,6 +654,7 @@ main > section,
 
   .button,
   .row-shot,
+  .answers summary,
   .answers summary::after {
     transition: none;
   }
