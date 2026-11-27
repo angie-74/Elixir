@@ -82,7 +82,10 @@
 
 #include <functional>
 
+#include "elixir_runtime/account_book.h"
+#include "elixir_runtime/account_use.h"
 #include "elixir_runtime/app_restart.h"
+#include "elixir_runtime/kept_cookies.h"
 #include "elixir_runtime/roblox_startup.h"
 #include "elixir_runtime/sign_in_identity.h"
 #include "jnivm/jnivm.h"
@@ -798,7 +801,16 @@ int RunElixirRuntime(const std::vector<std::string>& arguments) {
   sign_in_options.http_client = std::make_shared<WinHttpClient>();
   sign_in_options.log = [](std::string_view line) { Log(line); };
   sign_in_options.store = session_store;
+  sign_in_options.accounts = std::make_shared<AccountBook>(
+      options.accounts_dir.empty() ? paths.auth_root() / L"accounts" : Absolute(options.accounts_dir));
+  const auto account_use = std::make_shared<AccountUse>();
+  sign_in_options.account_changed = [account_use](long long user_id) { account_use->SetAccount(user_id); };
   const std::unique_ptr<SignInIdentity> sign_in = SignInIdentity::Install(*java_vm, std::move(sign_in_options));
+  KeptCookies::Options kept_cookie_options;
+  kept_cookie_options.store = std::make_shared<RobloxSessionStore>(paths.auth_root() / L"roblox-cookies.dpapi",
+                                                                   RobloxSessionStore::Content::kCookies);
+  kept_cookie_options.log = [](std::string_view line) { Log(line); };
+  const std::shared_ptr<KeptCookies> kept_cookies = KeptCookies::Install(*java_vm, std::move(kept_cookie_options));
   AppRestart::Options restart_options;
   restart_options.log = [](std::string_view line) { Log(line); };
   const std::shared_ptr<AppRestart> restart = AppRestart::Install(*java_vm, std::move(restart_options));
@@ -980,6 +992,7 @@ int RunElixirRuntime(const std::vector<std::string>& arguments) {
     experience_options.keyboard_enabled = input.keyboard_enabled;
     experience_options.microphone_enabled = config.config.microphone_enabled();
     if (discord != nullptr) experience_options.presence = discord->observer();
+    experience_options.in_game_changed = [account_use](bool in_game) { account_use->SetInGame(in_game); };
     std::string experience_unavailable;
     experience = ExperienceSession::Create(handle, java_vm, experience_options, &experience_unavailable);
     if (experience == nullptr) {
@@ -1041,7 +1054,8 @@ int RunElixirRuntime(const std::vector<std::string>& arguments) {
     restart->Detach();
     Log(std::string("session ends: ") + reason);
     game.StopInput();
-    if (sign_in != nullptr) static_cast<void>(java_vm->RefreshRobloxCredentialFromEngine(java_vm->GetJNIEnv()));
+    static_cast<void>(java_vm->RefreshRobloxCredentialFromEngine(java_vm->GetJNIEnv()));
+    if (kept_cookies != nullptr) kept_cookies->Detach();
     bool app_shut_down = false;
 #if defined(ELIXIR_RUNTIME_HAS_EXPERIENCE)
     if (experience != nullptr) app_shut_down = experience->Shutdown();

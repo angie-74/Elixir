@@ -6,6 +6,7 @@
 #ifndef ELIXIR_RUNTIME_EXPERIENCE_SESSION_H_
 #define ELIXIR_RUNTIME_EXPERIENCE_SESSION_H_
 
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -25,6 +26,7 @@ struct ExperienceSessionOptions {
   bool keyboard_enabled = true;
   bool microphone_enabled = false;
   mocktail::runtime::RobloxExperiencePresenceObserver presence;
+  std::function<void(bool in_game)> in_game_changed;
 };
 
 class ExperienceSession final {

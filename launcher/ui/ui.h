@@ -157,6 +157,8 @@ class Ui {
   bool ComboBox(std::wstring_view id, const D2D1_RECT_F& rect, std::wstring_view name, std::wstring_view value,
                 bool expanded, bool enabled);
   bool ComboOption(std::wstring_view id, const D2D1_RECT_F& rect, std::wstring_view label, bool selected);
+  bool MenuRow(std::wstring_view id, const D2D1_RECT_F& rect, std::wstring_view name);
+  bool IconButton(std::wstring_view id, const D2D1_RECT_F& rect, wchar_t glyph, std::wstring_view name);
   bool Segmented(std::wstring_view id, float x, float y, const std::vector<std::wstring>& options, int* index,
                  std::wstring_view name, bool enabled = true, float* out_width = nullptr);
   bool Tabs(std::wstring_view id, float x, float y, const std::vector<std::wstring>& options, int* index,

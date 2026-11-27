@@ -1213,6 +1213,9 @@ void App::OnKeyDown(WPARAM key) {
       case VK_SPACE: Activate(control + L"#" + std::to_wstring(menu_focus_)); return;
       case VK_ESCAPE:
       case VK_F4: CloseMenu(); return;
+      case VK_DELETE:
+        if (control == kInstanceAccountControl) RemoveInstanceAccount(menu_focus_);
+        return;
       case VK_TAB: CloseMenu(); break;
       default: break;
     }
@@ -2018,6 +2021,7 @@ void App::CloseLaunchProgress() {
 
 void App::OnRuntimeExited(DWORD exit_code) {
   CloseLaunchProgress();
+  if (MenuOpen(kInstanceAccountControl)) CloseMenu();
   const bool stopped = runtime_.stopping || exit_code == kStoppedByLauncherExitCode;
   const std::size_t crash_reports_before = crash_.entries.size();
   runtime_.running = false;
@@ -2310,7 +2314,7 @@ void App::CloseOverlay() {
 
 void App::OnOverlayAction(const std::wstring& id) {
   if (OnInstallerOverlayAction(id)) return;
-  if (OnRobloxOverlayAction(id) || OnLinkOverlayAction(id)) return;
+  if (OnRobloxOverlayAction(id) || OnLinkOverlayAction(id) || OnInstanceOverlayAction(id)) return;
   if (id == L"overlay.close") {
     CloseOverlay();
   } else if (id == L"overlay.crashes") {

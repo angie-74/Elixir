@@ -8,6 +8,7 @@ set(ELIXIR_LAUNCHER_DIR "${ELIXIR_LAUNCHER_ROOT}/launcher")
 set(_elixir_launcher_tests "${ELIXIR_LAUNCHER_ROOT}/tests/windows/launcher")
 
 add_library(elixir_launcher_core STATIC
+  ${ELIXIR_LAUNCHER_DIR}/core/accounts.cc
   ${ELIXIR_LAUNCHER_DIR}/core/apk_component.cc
   ${ELIXIR_LAUNCHER_DIR}/core/audio_devices.cc
   ${ELIXIR_LAUNCHER_DIR}/core/bundle.cc
@@ -169,6 +170,7 @@ endif()
 
 if(BUILD_TESTING)
   elixir_gtest(elixir_launcher_core_test
+    ${_elixir_launcher_tests}/accounts_test.cc
     ${_elixir_launcher_tests}/core_test.cc
     ${_elixir_launcher_tests}/update_test.cc
     ${_elixir_launcher_tests}/diagnostics_test.cc

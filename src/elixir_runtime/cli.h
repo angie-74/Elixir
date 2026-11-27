@@ -45,6 +45,7 @@ struct LaunchOptions {
   std::filesystem::path crash_dir;
   std::filesystem::path fflags_file;
   std::filesystem::path mods_dir;
+  std::filesystem::path accounts_dir;
   std::optional<bool> user_fflags;
   std::string discord_app;
   std::optional<bool> discord_game;

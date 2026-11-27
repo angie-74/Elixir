@@ -283,6 +283,7 @@ std::vector<std::wstring> BuildRuntimeArguments(const LauncherConfig& config, co
                config.audio.output_device_id.empty() ? L"default" : Utf8ToWide(config.audio.output_device_id),
                L"--timer-resolution-1ms", on_off(config.performance.timer_resolution_1ms),
                L"--mmcss", on_off(config.performance.mmcss)});
+  if (!paths.accounts_dir.empty()) args.insert(args.end(), {L"--accounts-dir", paths.accounts_dir});
   if (!config.audio.input_device_id.empty()) {
     const std::string& id = config.audio.input_device_id;
     const bool valid = id.size() <= 512 && std::none_of(id.begin(), id.end(), [](unsigned char c) {

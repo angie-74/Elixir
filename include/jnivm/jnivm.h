@@ -16,7 +16,9 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace jnivm {
@@ -83,6 +85,23 @@ struct RobloxCredentialSinkCallbacks {
   bool (*store)(void *context, const char *data, std::size_t size) = nullptr;
   void (*signed_out)(void *context) = nullptr;
 };
+
+struct RobloxKeptCookieCallbacks {
+  void (*store)(void *context, const char *data, std::size_t size) = nullptr;
+};
+
+enum class RobloxSignInState {
+  kUnknown,
+  kNoCookies,
+  kSignedIn,
+  kSignedOut,
+};
+
+inline constexpr std::size_t kMaximumRobloxKeptCookies = 64;
+inline constexpr std::size_t kMaximumRobloxKeptCookieBytes = 32 * 1024;
+
+std::string RobloxKeptCookiesFromHeader(std::string_view header);
+std::size_t CountRobloxKeptCookies(std::string_view cookies);
 
 enum class RobloxAppRestartReason {
   kAccountSwitched,
@@ -308,12 +327,21 @@ public:
 
   void SetRobloxCookieGetter(RobloxCookieGetter getter);
   bool RefreshRobloxCredentialFromEngine(JNIEnv* env);
+  RobloxSignInState SyncRobloxSignInFromEngine(JNIEnv* env);
 
   void SetRobloxCredentialSink(std::shared_ptr<void> context,
                                const RobloxCredentialSinkCallbacks &callbacks);
   void ClearRobloxCredentialSink();
   bool DispatchRobloxCredential(const char *data, std::size_t size);
   void DispatchRobloxSignOut();
+
+  void SetRobloxKeptCookieSink(std::shared_ptr<void> context,
+                               const RobloxKeptCookieCallbacks &callbacks);
+  void ClearRobloxKeptCookieSink();
+  void SetRobloxKeptCookies(std::string_view cookies);
+  bool CopyRobloxKeptCookies(std::string *cookies) const;
+  void KeepRobloxPushedCookie(std::string_view target,
+                              std::string_view set_cookie);
 
   void SetRobloxAppRestartSink(std::shared_ptr<void> context,
                                const RobloxAppRestartCallbacks &callbacks);
@@ -471,6 +499,16 @@ private:
   };
   mutable std::mutex roblox_credential_sink_mutex_;
   RobloxCredentialSinkBinding roblox_credential_sink_binding_;
+
+  struct RobloxKeptCookieBinding {
+    std::shared_ptr<void> context;
+    RobloxKeptCookieCallbacks callbacks;
+  };
+  void ApplyRobloxKeptCookies(
+      const std::vector<std::pair<std::string, std::string>> &changes);
+  mutable std::mutex roblox_kept_cookie_mutex_;
+  RobloxKeptCookieBinding roblox_kept_cookie_binding_;
+  std::string roblox_kept_cookies_;
 
   struct RobloxAppRestartBinding {
     std::shared_ptr<void> context;

@@ -31,6 +31,7 @@ struct LauncherPaths {
   std::wstring runtime_flag;
   std::wstring guest_runtime_dir;
   std::wstring bundle_dir;
+  std::wstring accounts_dir;
 };
 
 void UseBuiltInPrograms(const std::wstring& program);

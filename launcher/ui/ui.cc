@@ -546,6 +546,29 @@ bool Ui::ComboOption(std::wstring_view id, const D2D1_RECT_F& rect, std::wstring
   return false;
 }
 
+bool Ui::MenuRow(std::wstring_view id, const D2D1_RECT_F& rect, std::wstring_view name) {
+  if (!painting()) return Hit(id) && interaction_->type == Interaction::Type::kActivate;
+  Record(id, ControlKind::kListItem, rect, name, true);
+  if (Culled(rect)) return false;
+  if (Hovered(id) || (Focused(id) && state_->focus_visible)) {
+    Fill(rect, theme::kNavSelected, theme::kControlRadius);
+  }
+  FocusRing(id, Inflate(rect, -3.0f), theme::kControlRadius);
+  return false;
+}
+
+bool Ui::IconButton(std::wstring_view id, const D2D1_RECT_F& rect, wchar_t glyph, std::wstring_view name) {
+  if (!painting()) return Hit(id) && interaction_->type == Interaction::Type::kActivate;
+  Record(id, ControlKind::kButton, rect, name, true);
+  if (Culled(Inflate(rect, 4.0f))) return false;
+  const bool hover = Hovered(id);
+  if (hover) Fill(rect, Pressed(id) ? theme::kSubtlePressed : theme::kSubtleHover, theme::kControlRadius);
+  Glyph((rect.left + rect.right) / 2.0f, (rect.top + rect.bottom) / 2.0f, glyph, TextStyle::kIconSmall,
+        hover ? theme::kText : theme::kTextSecondary);
+  FocusRing(id, rect, theme::kControlRadius);
+  return false;
+}
+
 bool Ui::Segmented(std::wstring_view id, float x, float y, const std::vector<std::wstring>& options, int* index,
                    std::wstring_view name, bool enabled, float* out_width) {
   return Segments(id, x, y, options, index, name, enabled, out_width, false);

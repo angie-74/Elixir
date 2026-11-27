@@ -6,6 +6,7 @@
 #include <system_error>
 #include <utility>
 
+#include "elixir_runtime/account_book.h"
 #include "elixir_runtime/roblox_session_store.h"
 #include "jnivm/jnivm.h"
 #include "services/auth_service.h"
@@ -86,7 +87,11 @@ struct SignInIdentity::State {
   std::string last;
   Outcome last_outcome = Outcome::kPending;
   std::shared_ptr<RobloxSessionStore> store;
+  std::shared_ptr<AccountBook> accounts;
+  std::function<long long()> now_seconds;
+  std::function<void(long long)> account_changed;
   std::string saved;
+  std::string restored;
   bool busy = false;
   bool stopping = false;
   bool exited = false;
@@ -95,6 +100,14 @@ struct SignInIdentity::State {
     if (!log) return;
     try {
       log(line);
+    } catch (...) {
+    }
+  }
+
+  void TellAccount(long long user_id) {
+    if (!account_changed) return;
+    try {
+      account_changed(user_id);
     } catch (...) {
     }
   }
@@ -116,6 +129,16 @@ std::unique_ptr<SignInIdentity> SignInIdentity::Install(jnivm::VM& vm, Options o
   state->log = std::move(options.log);
   state->retry_delays = std::move(options.retry_delays);
   state->store = std::move(options.store);
+  state->accounts = std::move(options.accounts);
+  state->account_changed = std::move(options.account_changed);
+  state->now_seconds = std::move(options.now_seconds);
+  if (!state->now_seconds) {
+    state->now_seconds = [] {
+      return static_cast<long long>(std::chrono::duration_cast<std::chrono::seconds>(
+                                        std::chrono::system_clock::now().time_since_epoch())
+                                        .count());
+    };
+  }
   std::unique_ptr<SignInIdentity> identity(new SignInIdentity(vm, state, options.shutdown_wait));
   try {
     identity->worker_ = std::thread([state] { Run(state); });
@@ -131,26 +154,39 @@ std::unique_ptr<SignInIdentity> SignInIdentity::Install(jnivm::VM& vm, Options o
 void SignInIdentity::AcceptRestored(std::string_view credential) {
   if (state_ == nullptr || !IsCanonicalCredential(credential.data(), credential.size())) return;
   std::lock_guard<std::mutex> lock(state_->mutex);
-  if (!state_->stopping) AssignSecret(&state_->saved, credential);
+  if (state_->stopping) return;
+  AssignSecret(&state_->saved, credential);
+  AssignSecret(&state_->restored, credential);
 }
 
 void SignInIdentity::SignedOut(void* context) {
   auto* state = static_cast<State*>(context);
   if (state == nullptr) return;
   std::shared_ptr<RobloxSessionStore> store;
+  std::shared_ptr<AccountBook> accounts;
+  std::string signed_out;
   {
     std::lock_guard<std::mutex> lock(state->mutex);
     if (state->stopping) return;
+    AssignSecret(&signed_out, !state->saved.empty() ? state->saved : state->last);
     ClearSecret(&state->pending);
     state->has_pending = false;
     ClearSecret(&state->last);
     state->last_outcome = Outcome::kPending;
     ClearSecret(&state->saved);
+    ClearSecret(&state->restored);
     store = state->store;
+    accounts = state->accounts;
     state->Log(store != nullptr ? "sign-in: Roblox signed out; the saved session was removed"
                                 : "sign-in: Roblox signed out");
+    state->TellAccount(0);
   }
   if (store != nullptr) store->Clear();
+  if (accounts != nullptr && !signed_out.empty() && accounts->ForgetSession(signed_out)) {
+    std::lock_guard<std::mutex> lock(state->mutex);
+    if (!state->stopping) state->Log("accounts: the signed-out account was removed from the saved accounts");
+  }
+  ClearSecret(&signed_out);
   state->wake.notify_all();
 }
 
@@ -225,6 +261,21 @@ void SignInIdentity::LookUp(State& state, const std::string& credential, std::un
         state.vm->SetRobloxAuthIdentity(identity);
         state.last_outcome = Outcome::kResolved;
         state.Log("sign-in: account identity set");
+        state.TellAccount(identity.user_id);
+        if (state.accounts != nullptr) {
+          const std::shared_ptr<AccountBook> accounts = state.accounts;
+          const long long now = state.now_seconds();
+          const bool new_sign_in = credential != state.restored;
+          lock.unlock();
+          const AccountBook::Remembered remembered = accounts->Remember(
+              identity.user_id, identity.username, identity.display_name, credential, now, new_sign_in);
+          lock.lock();
+          if (!state.stopping && remembered == AccountBook::Remembered::kSaved) {
+            state.Log("accounts: this account was saved for new instances");
+          } else if (!state.stopping && remembered == AccountBook::Remembered::kFailed) {
+            state.Log("accounts: this account could not be saved for new instances");
+          }
+        }
         return;
       }
       case ms::AuthSessionStatus::kInvalid: {
@@ -238,6 +289,15 @@ void SignInIdentity::LookUp(State& state, const std::string& credential, std::un
           store->ClearIfEquals(credential);
           lock.lock();
           if (!state.stopping) state.Log("sign-in: the saved session was removed");
+        }
+        if (state.accounts != nullptr && !state.stopping) {
+          const std::shared_ptr<AccountBook> accounts = state.accounts;
+          lock.unlock();
+          const bool forgotten = accounts->ForgetSession(credential);
+          lock.lock();
+          if (forgotten && !state.stopping) {
+            state.Log("accounts: the account Roblox no longer accepts was removed from the saved accounts");
+          }
         }
         return;
       }
@@ -285,6 +345,7 @@ void SignInIdentity::Shutdown() {
     state_->has_pending = false;
     ClearSecret(&state_->last);
     ClearSecret(&state_->saved);
+    ClearSecret(&state_->restored);
   }
   state_->wake.notify_all();
   if (vm_ != nullptr) {

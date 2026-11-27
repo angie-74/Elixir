@@ -313,16 +313,96 @@ void App::BuildBottomBar(Ui& ui, float width, float height) {
     const float window_width = ui.ButtonWidth(L"New instance", glyph::kAdd) + 8.0f;
     const D2D1_RECT_F another = D2D1::RectF(button.left - 12.0f - window_width, button.top, button.left - 12.0f,
                                             button.bottom);
-    if (ui.Button(L"bar.window", another, opening_window_ ? L"Opening…" : L"New instance", ButtonStyle::kStandard,
-                  !runtime_.stopping && !opening_window_, glyph::kAdd,
-                  L"Opens another Roblox window. Switch accounts in it from Roblox's menu.")) {
-      Defer([this] { OpenAnotherWindow(); });
+    if (ui.Button(kInstanceAccountControl, another, opening_window_ ? L"Opening…" : L"New instance",
+                  ButtonStyle::kStandard, !runtime_.stopping && !opening_window_, glyph::kAdd,
+                  L"Opens another Roblox window with the account you pick.")) {
+      Defer([this] { ChooseInstanceAccount(); });
     }
+    if (MenuOpen(kInstanceAccountControl)) BuildInstanceAccountMenu(ui, another);
     return;
   }
   if (ui.Button(L"bar.play", button, L"Play", ButtonStyle::kStandard, true)) {
     Defer([this] { Play(); });
   }
+}
+
+void App::BuildInstanceAccountMenu(Ui& ui, const D2D1_RECT_F& button) {
+  constexpr float kRowHeight = 52.0f;
+  constexpr float kLastRowHeight = 40.0f;
+  constexpr float kPadding = 4.0f;
+  constexpr float kPicture = 36.0f;
+  constexpr float kTextLeft = 10.0f + kPicture + 12.0f;
+  constexpr float kRemoveSpace = 40.0f;
+  const std::wstring control = kInstanceAccountControl;
+  const int count = static_cast<int>(instance_accounts_.size());
+  const auto detail_of = [](const InstanceAccountRow& row) {
+    std::wstring detail = L"@" + row.account.username;
+    if (row.use == AccountUse::kInGame) detail += L"  \u00B7  In game";
+    if (row.use == AccountUse::kOpen) detail += L"  \u00B7  Open";
+    return detail;
+  };
+  float widest = ui.TextWidth(L"Add account", TextStyle::kBody);
+  for (const InstanceAccountRow& row : instance_accounts_) {
+    widest = std::max(widest, ui.TextWidth(SavedAccountName(row.account), TextStyle::kBody));
+    widest = std::max(widest, ui.TextWidth(detail_of(row), TextStyle::kCaption));
+  }
+  const float menu_width = std::clamp(widest + kTextLeft + kRemoveSpace + 2.0f * kPadding, 260.0f, 420.0f);
+  const float menu_height = kRowHeight * static_cast<float>(count) + kLastRowHeight + 2.0f * kPadding;
+  const float bottom = std::min(button.top - kPadding, viewport_.bottom);
+  const float top = std::max(viewport_.top + kPadding, bottom - menu_height);
+  const D2D1_RECT_F panel = D2D1::RectF(button.right - menu_width, top, button.right, top + menu_height);
+  ui.Fill(panel, theme::kDialog, theme::kControlRadius);
+  ui.Stroke(panel, theme::kControlBorder, theme::kControlRadius);
+  for (int i = 0; i < count; ++i) {
+    const InstanceAccountRow& row = instance_accounts_[static_cast<std::size_t>(i)];
+    const float row_top = top + kPadding + static_cast<float>(i) * kRowHeight;
+    const D2D1_RECT_F rect = D2D1::RectF(panel.left + kPadding, row_top, panel.right - kPadding, row_top + kRowHeight);
+    const std::wstring name = SavedAccountName(row.account);
+    const std::wstring detail = detail_of(row);
+    if (ui.MenuRow(control + L"#" + std::to_wstring(i), rect, name + L", " + detail)) {
+      Defer([this, i] { StartInstanceWith(i); });
+    }
+    const float center = (rect.top + rect.bottom) / 2.0f;
+    const D2D1_RECT_F picture = D2D1::RectF(rect.left + 10.0f, center - kPicture / 2.0f, rect.left + 10.0f + kPicture,
+                                            center + kPicture / 2.0f);
+    ui.Fill(picture, theme::White(0.08f), kPicture / 2.0f);
+    if (!row.account.picture_file.empty()) {
+      ui.Image(picture, row.account.picture_file);
+    } else {
+      ui.TextLine(picture, name.substr(0, 1), TextStyle::kBodyStrong, theme::kTextSecondary, Align::kCenter);
+    }
+    const float text_left = rect.left + kTextLeft;
+    const float text_right = rect.right - kRemoveSpace;
+    ui.TextLine(D2D1::RectF(text_left, rect.top + 7.0f, text_right, rect.top + 28.0f), name, TextStyle::kBody,
+                theme::kText);
+    const std::wstring handle = L"@" + row.account.username;
+    const D2D1_RECT_F detail_rect = D2D1::RectF(text_left, rect.top + 27.0f, text_right, rect.bottom - 7.0f);
+    if (row.use == AccountUse::kNotOpen) {
+      ui.TextLine(detail_rect, handle, TextStyle::kCaption, theme::kTextSecondary);
+    } else {
+      const std::wstring before = handle + L"  ·";
+      ui.TextLine(detail_rect, before, TextStyle::kCaption, theme::kTextSecondary);
+      const float state_left = std::min(text_right, text_left + ui.TextWidth(before, TextStyle::kCaption) + 7.0f);
+      ui.TextLine(D2D1::RectF(state_left, detail_rect.top, text_right, detail_rect.bottom),
+                  row.use == AccountUse::kInGame ? L"In game" : L"Open", TextStyle::kCaption,
+                  row.use == AccountUse::kInGame ? theme::Rgb(state_.control_accent_rgb) : theme::kTextSecondary);
+    }
+    const D2D1_RECT_F remove = D2D1::RectF(rect.right - 34.0f, center - 14.0f, rect.right - 6.0f, center + 14.0f);
+    if (ui.IconButton(control + L"#remove." + std::to_wstring(i), remove, glyph::kCancel,
+                      L"Remove " + SavedAccountLabel(row.account))) {
+      Defer([this, i] { RemoveInstanceAccount(i); });
+    }
+  }
+  const float last_top = top + kPadding + static_cast<float>(count) * kRowHeight;
+  const D2D1_RECT_F last =
+      D2D1::RectF(panel.left + kPadding, last_top, panel.right - kPadding, last_top + kLastRowHeight);
+  if (ui.MenuRow(control + L"#" + std::to_wstring(count), last, L"Add account")) {
+    Defer([this, count] { StartInstanceWith(count); });
+  }
+  ui.Glyph(last.left + 10.0f + kPicture / 2.0f, (last.top + last.bottom) / 2.0f, glyph::kAdd, TextStyle::kIconSmall,
+           theme::kTextSecondary);
+  ui.TextLine(D2D1::RectF(last.left + kTextLeft, last.top, last.right - 10.0f, last.bottom), L"Add account",
+              TextStyle::kBody, theme::kText);
 }
 
 namespace {

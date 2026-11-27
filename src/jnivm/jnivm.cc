@@ -593,6 +593,13 @@ void HandleRobloxAccountNotification(const std::string& type) {
     vm->DispatchRobloxAppRestart(RobloxAppRestartReason::kAccountSwitched);
   } else if (type == "RESTART_LUA_APP") {
     vm->DispatchRobloxAppRestart(RobloxAppRestartReason::kRequestedByRoblox);
+  } else if (type == "DID_LOG_OUT") {
+    const RobloxSignInState state =
+        vm->SyncRobloxSignInFromEngine(vm->GetJNIEnv());
+    if (state == RobloxSignInState::kSignedOut ||
+        state == RobloxSignInState::kNoCookies) {
+      vm->DispatchRobloxSignOut();
+    }
   }
 }
 
@@ -808,6 +815,27 @@ void ClearLegacyCookieStore() {
   std::lock_guard<std::recursive_mutex> lock(g_jni_state_mutex);
   ClearCookieString(&g_cookie_header);
   g_cookie_store_loaded = false;
+}
+
+void TraceCookiePush(jobject obj, const std::string& target,
+                     const std::string& cookie) {
+  if (!TraceEnabled()) {
+    return;
+  }
+  const std::size_t equals = cookie.find('=');
+  const std::size_t name_end =
+      cookie.find_first_of("=; \t\r\n");
+  std::string name = equals != std::string::npos && name_end == equals
+                         ? cookie.substr(0, equals)
+                         : std::string("?");
+  if (name.size() > 64) {
+    name.resize(64);
+  }
+  const bool url = target.rfind("http", 0) == 0 && target.size() <= 96 &&
+                   target.find('?') == std::string::npos;
+  std::cout << "  [JNI callback] " << ObjectClassName(obj)
+            << ".setCookie target=" << (url ? target : std::string("?"))
+            << " name=" << name << " bytes=" << cookie.size() << '\n';
 }
 
 std::string MocktailConfigRoot() {
@@ -1480,6 +1508,11 @@ void HandleVoidMethod(jobject obj, jmethodID method_id, JniVaArgs& args) {
       auto second = args.Next<jstring>();
       SetStringFieldRaw(obj, "cookieName", StringFromJString(first).c_str());
       SetStringFieldRaw(obj, "cookieValue", StringFromJString(second).c_str());
+      TraceCookiePush(obj, StringFromJString(first), StringFromJString(second));
+      if (VM* vm = CurrentVM()) {
+        vm->KeepRobloxPushedCookie(StringFromJString(first),
+                                   StringFromJString(second));
+      }
       StoreCookieHeader(StringFromJString(second));
       return;
     }
@@ -3827,6 +3860,14 @@ void HandleVoidMethodA(jobject obj, jmethodID method_id, const jvalue *args) {
     SetStringFieldRaw(obj, "cookieValue",
                       StringFromJString(
                           reinterpret_cast<jstring>(args[1].l)).c_str());
+    TraceCookiePush(obj,
+                    StringFromJString(reinterpret_cast<jstring>(args[0].l)),
+                    StringFromJString(reinterpret_cast<jstring>(args[1].l)));
+    if (VM* vm = CurrentVM()) {
+      vm->KeepRobloxPushedCookie(
+          StringFromJString(reinterpret_cast<jstring>(args[0].l)),
+          StringFromJString(reinterpret_cast<jstring>(args[1].l)));
+    }
     StoreCookieHeader(
         StringFromJString(reinterpret_cast<jstring>(args[1].l)));
     return;
@@ -4713,6 +4754,11 @@ VM::~VM() {
   ClearRobloxDataModelNotificationCallbacks();
   ClearRobloxExperienceLifecycleCallbacks();
   ClearRobloxCredentialSink();
+  ClearRobloxKeptCookieSink();
+  {
+    std::lock_guard<std::mutex> lock(roblox_kept_cookie_mutex_);
+    ClearCookieString(&roblox_kept_cookies_);
+  }
   ClearRobloxAppRestartSink();
   ClearRobloxCredentialProvider();
   ClearRobloxTextInputCallbacks();
@@ -5188,15 +5234,16 @@ bool VM::DispatchRobloxCookieSet(JNIEnv* env, jobjectArray cookies,
     std::lock_guard<std::mutex> lock(roblox_data_model_notification_mutex_);
     binding = roblox_data_model_notification_binding_;
   }
-  if (binding == nullptr || binding->context == nullptr ||
-      binding->callbacks.on_set_cookie == nullptr || env == nullptr ||
-      cookies == nullptr || url == nullptr) {
+  if (env == nullptr || cookies == nullptr || url == nullptr) {
     return false;
   }
+  const bool bound = binding != nullptr && binding->context != nullptr &&
+                     binding->callbacks.on_set_cookie != nullptr;
   const jsize cookie_count = env->GetArrayLength(cookies);
   if (cookie_count < 0 || cookie_count > kMaximumCookieSetCount) {
     return false;
   }
+  const std::string target = StringFromJString(url);
   for (jsize index = 0; index < cookie_count; ++index) {
     auto cookie =
         static_cast<jstring>(env->GetObjectArrayElement(cookies, index));
@@ -5217,6 +5264,11 @@ bool VM::DispatchRobloxCookieSet(JNIEnv* env, jobjectArray cookies,
                            static_cast<std::size_t>(cookie_size));
     env->ReleaseStringUTFChars(cookie, cookie_chars);
     env->DeleteLocalRef(cookie);
+    KeepRobloxPushedCookie(target, raw_cookie);
+    if (!bound) {
+      ClearCookieString(&raw_cookie);
+      continue;
+    }
     std::string canonical_cookie = NormalizeCookieHeader(raw_cookie);
     ClearCookieString(&raw_cookie);
     if (canonical_cookie.empty()) {
@@ -5232,7 +5284,7 @@ bool VM::DispatchRobloxCookieSet(JNIEnv* env, jobjectArray cookies,
                                      callback_cookie, url);
     env->DeleteLocalRef(callback_cookie);
   }
-  return true;
+  return bound;
 }
 
 void VM::SetRobloxExperienceLifecycleCallbacks(
@@ -5969,36 +6021,466 @@ void VM::SetRobloxCookieGetter(RobloxCookieGetter getter) {
   roblox_cookie_getter_ = getter;
 }
 
+namespace {
+
+constexpr std::string_view kSignInCookieName = ".ROBLOSECURITY";
+constexpr std::string_view kHttpOnlyMark = "#HttpOnly_";
+
+using CookieList = std::vector<std::pair<std::string, std::string>>;
+
+bool IsCookieNameByte(unsigned char byte) {
+  if (byte <= 0x20 || byte >= 0x7f) {
+    return false;
+  }
+  constexpr std::string_view kSeparators = R"sep(()<>@,;:\"/[]?={})sep";
+  return kSeparators.find(static_cast<char>(byte)) == std::string_view::npos;
+}
+
+bool IsCookieValueByte(unsigned char byte) {
+  return byte >= 0x20 && byte < 0x7f && byte != ';';
+}
+
+bool IsCookieName(std::string_view name) {
+  return !name.empty() && std::all_of(name.begin(), name.end(), [](char c) {
+    return IsCookieNameByte(static_cast<unsigned char>(c));
+  });
+}
+
+bool IsCookieValue(std::string_view value) {
+  return !value.empty() && std::all_of(value.begin(), value.end(), [](char c) {
+    return IsCookieValueByte(static_cast<unsigned char>(c));
+  });
+}
+
+std::string LowerAscii(std::string_view text) {
+  std::string lower(text);
+  std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+  return lower;
+}
+
+bool IsCookieAttributeName(std::string_view name) {
+  const std::string lower = LowerAscii(name);
+  for (const char* attribute : {"path", "domain", "expires", "max-age",
+                                "samesite", "priority", "secure", "httponly",
+                                "partitioned"}) {
+    if (lower == attribute) {
+      return true;
+    }
+  }
+  return false;
+}
+
+std::string_view TrimCookiePart(std::string_view part) {
+  const auto blank = [](char c) {
+    return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+  };
+  while (!part.empty() && blank(part.front())) {
+    part.remove_prefix(1);
+  }
+  while (!part.empty() && blank(part.back())) {
+    part.remove_suffix(1);
+  }
+  return part;
+}
+
+bool IsRobloxHost(std::string_view host) {
+  while (!host.empty() && host.front() == '.') {
+    host.remove_prefix(1);
+  }
+  const std::string lower = LowerAscii(host);
+  constexpr std::string_view kSite = "roblox.com";
+  constexpr std::string_view kBelowSite = ".roblox.com";
+  return lower == kSite ||
+         (lower.size() > kBelowSite.size() &&
+          lower.compare(lower.size() - kBelowSite.size(), kBelowSite.size(),
+                        kBelowSite) == 0);
+}
+
+std::string_view HostOfTarget(std::string_view target) {
+  target = TrimCookiePart(target);
+  const std::size_t scheme = target.find("://");
+  if (scheme != std::string_view::npos) {
+    target.remove_prefix(scheme + 3);
+  }
+  target = target.substr(0, target.find_first_of("/?#"));
+  const std::size_t user = target.rfind('@');
+  if (user != std::string_view::npos) {
+    target.remove_prefix(user + 1);
+  }
+  return target.substr(0, target.find(':'));
+}
+
+template <typename Visitor>
+void ForEachCookie(std::string_view header, Visitor&& visit) {
+  std::size_t begin = 0;
+  while (begin <= header.size()) {
+    std::size_t end = header.find(';', begin);
+    if (end == std::string_view::npos) {
+      end = header.size();
+    }
+    const std::string_view part =
+        TrimCookiePart(header.substr(begin, end - begin));
+    begin = end + 1;
+    const std::size_t equals = part.find('=');
+    if (equals == std::string_view::npos || equals == 0) {
+      continue;
+    }
+    const std::string_view name = part.substr(0, equals);
+    const std::string_view value = part.substr(equals + 1);
+    if (!IsCookieName(name) || !IsCookieValue(value)) {
+      continue;
+    }
+    visit(name, value);
+  }
+}
+
+template <typename Visitor>
+void ForEachEngineCookie(std::string_view text, Visitor&& visit) {
+  std::size_t begin = 0;
+  while (begin <= text.size()) {
+    std::size_t end = text.find(';', begin);
+    if (end == std::string_view::npos) {
+      end = text.size();
+    }
+    std::string_view part = text.substr(begin, end - begin);
+    begin = end + 1;
+    while (!part.empty() && (part.front() == ' ' || part.front() == '\r' ||
+                             part.front() == '\n')) {
+      part.remove_prefix(1);
+    }
+    while (!part.empty() && (part.back() == '\r' || part.back() == '\n')) {
+      part.remove_suffix(1);
+    }
+    if (part.find('\t') == std::string_view::npos) {
+      part = TrimCookiePart(part);
+      const std::size_t equals = part.find('=');
+      if (equals == std::string_view::npos || equals == 0) {
+        continue;
+      }
+      const std::string_view name = part.substr(0, equals);
+      const std::string_view value = part.substr(equals + 1);
+      if (IsCookieName(name) && IsCookieValue(value) &&
+          !IsCookieAttributeName(name)) {
+        visit(std::string_view(), name, value);
+      }
+      continue;
+    }
+    std::string_view fields[7];
+    std::size_t count = 0;
+    std::size_t field_begin = 0;
+    while (count < 7) {
+      std::size_t field_end =
+          count == 6 ? std::string_view::npos : part.find('\t', field_begin);
+      if (field_end == std::string_view::npos) {
+        fields[count++] = part.substr(field_begin);
+        break;
+      }
+      fields[count++] = part.substr(field_begin, field_end - field_begin);
+      field_begin = field_end + 1;
+    }
+    if (count != 7) {
+      continue;
+    }
+    std::string_view domain = fields[0];
+    if (domain.substr(0, kHttpOnlyMark.size()) == kHttpOnlyMark) {
+      domain.remove_prefix(kHttpOnlyMark.size());
+    }
+    if (domain.empty() || !IsCookieName(fields[5]) ||
+        !IsCookieValue(fields[6])) {
+      continue;
+    }
+    visit(domain, fields[5], fields[6]);
+  }
+}
+
+std::string JoinCookies(const CookieList& cookies) {
+  std::string joined;
+  for (const auto& cookie : cookies) {
+    const std::size_t needed = (joined.empty() ? 0 : 2) + cookie.first.size() +
+                               1 + cookie.second.size();
+    if (joined.size() + needed > kMaximumRobloxKeptCookieBytes) {
+      continue;
+    }
+    if (!joined.empty()) {
+      joined += "; ";
+    }
+    joined.append(cookie.first);
+    joined.push_back('=');
+    joined.append(cookie.second);
+  }
+  return joined;
+}
+
+void PutCookie(CookieList* cookies, std::string_view name,
+               std::string_view value) {
+  for (auto it = cookies->begin(); it != cookies->end(); ++it) {
+    if (it->first != name) {
+      continue;
+    }
+    if (value.empty()) {
+      ClearCookieString(&it->second);
+      cookies->erase(it);
+    } else {
+      ClearCookieString(&it->second);
+      it->second.assign(value);
+    }
+    return;
+  }
+  if (!value.empty() && cookies->size() < kMaximumRobloxKeptCookies) {
+    cookies->emplace_back(std::string(name), std::string(value));
+  }
+}
+
+void ClearCookieList(CookieList* cookies) {
+  for (auto& cookie : *cookies) {
+    ClearCookieString(&cookie.second);
+  }
+  cookies->clear();
+}
+
+}
+
+std::string RobloxKeptCookiesFromHeader(std::string_view header) {
+  CookieList cookies;
+  ForEachCookie(header, [&](std::string_view name, std::string_view value) {
+    if (name != kSignInCookieName && !IsCookieAttributeName(name)) {
+      PutCookie(&cookies, name, value);
+    }
+  });
+  std::string kept = JoinCookies(cookies);
+  ClearCookieList(&cookies);
+  return kept;
+}
+
+std::size_t CountRobloxKeptCookies(std::string_view cookies) {
+  std::size_t count = 0;
+  ForEachCookie(cookies, [&](std::string_view, std::string_view) { ++count; });
+  return count;
+}
+
+void VM::SetRobloxKeptCookieSink(std::shared_ptr<void> context,
+                                 const RobloxKeptCookieCallbacks& callbacks) {
+  std::lock_guard<std::mutex> lock(roblox_kept_cookie_mutex_);
+  roblox_kept_cookie_binding_.context = std::move(context);
+  roblox_kept_cookie_binding_.callbacks = callbacks;
+}
+
+void VM::ClearRobloxKeptCookieSink() {
+  RobloxKeptCookieBinding old_binding;
+  {
+    std::lock_guard<std::mutex> lock(roblox_kept_cookie_mutex_);
+    old_binding = std::move(roblox_kept_cookie_binding_);
+    roblox_kept_cookie_binding_ = {};
+  }
+}
+
+void VM::SetRobloxKeptCookies(std::string_view cookies) {
+  std::string kept = RobloxKeptCookiesFromHeader(cookies);
+  std::lock_guard<std::mutex> lock(roblox_kept_cookie_mutex_);
+  ClearCookieString(&roblox_kept_cookies_);
+  roblox_kept_cookies_ = std::move(kept);
+}
+
+bool VM::CopyRobloxKeptCookies(std::string* cookies) const {
+  std::lock_guard<std::mutex> lock(roblox_kept_cookie_mutex_);
+  if (cookies != nullptr) {
+    cookies->assign(roblox_kept_cookies_);
+  }
+  return !roblox_kept_cookies_.empty();
+}
+
+void VM::ApplyRobloxKeptCookies(
+    const std::vector<std::pair<std::string, std::string>>& changes) {
+  if (changes.empty()) {
+    return;
+  }
+  RobloxKeptCookieBinding binding;
+  std::string kept;
+  {
+    std::lock_guard<std::mutex> lock(roblox_kept_cookie_mutex_);
+    CookieList cookies;
+    ForEachCookie(roblox_kept_cookies_,
+                  [&](std::string_view name, std::string_view value) {
+                    cookies.emplace_back(std::string(name), std::string(value));
+                  });
+    for (const auto& change : changes) {
+      if (change.first != kSignInCookieName && IsCookieName(change.first) &&
+          !IsCookieAttributeName(change.first) &&
+          (change.second.empty() || IsCookieValue(change.second))) {
+        PutCookie(&cookies, change.first, change.second);
+      }
+    }
+    kept = JoinCookies(cookies);
+    ClearCookieList(&cookies);
+    if (kept == roblox_kept_cookies_) {
+      ClearCookieString(&kept);
+      return;
+    }
+    ClearCookieString(&roblox_kept_cookies_);
+    roblox_kept_cookies_ = kept;
+    binding = roblox_kept_cookie_binding_;
+  }
+  if (TraceEnabled()) {
+    std::string names;
+    ForEachCookie(kept, [&](std::string_view name, std::string_view) {
+      if (!names.empty()) {
+        names += ", ";
+      }
+      names.append(name);
+    });
+    std::cout << "  [JNI] Roblox cookies kept for the next start: "
+              << (names.empty() ? "none" : names) << '\n';
+  }
+  if (binding.context != nullptr && binding.callbacks.store != nullptr) {
+    binding.callbacks.store(binding.context.get(), kept.data(), kept.size());
+  }
+  ClearCookieString(&kept);
+}
+
+void VM::KeepRobloxPushedCookie(std::string_view target,
+                                std::string_view set_cookie) {
+  if (!IsRobloxHost(HostOfTarget(target))) {
+    return;
+  }
+  const std::size_t first_end = set_cookie.find(';');
+  const std::string_view first = TrimCookiePart(set_cookie.substr(0, first_end));
+  const std::size_t equals = first.find('=');
+  if (equals == std::string_view::npos || equals == 0) {
+    return;
+  }
+  const std::string_view name = first.substr(0, equals);
+  const std::string_view value = first.substr(equals + 1);
+  if (!IsCookieName(name) || name == kSignInCookieName ||
+      IsCookieAttributeName(name) ||
+      (!value.empty() && !IsCookieValue(value))) {
+    return;
+  }
+  std::size_t begin =
+      first_end == std::string_view::npos ? set_cookie.size() : first_end + 1;
+  while (begin < set_cookie.size()) {
+    std::size_t end = set_cookie.find(';', begin);
+    if (end == std::string_view::npos) {
+      end = set_cookie.size();
+    }
+    const std::string_view attribute =
+        TrimCookiePart(set_cookie.substr(begin, end - begin));
+    begin = end + 1;
+    const std::size_t attribute_equals = attribute.find('=');
+    if (attribute_equals != std::string_view::npos &&
+        LowerAscii(attribute.substr(0, attribute_equals)) == "domain" &&
+        !IsRobloxHost(TrimCookiePart(attribute.substr(attribute_equals + 1)))) {
+      return;
+    }
+  }
+  if (TraceEnabled()) {
+    std::cout << "  [JNI callback] Roblox handed over the cookie " << name
+              << (value.empty() ? " (removed)" : "") << '\n';
+  }
+  ApplyRobloxKeptCookies({{std::string(name), std::string(value)}});
+}
+
 bool VM::RefreshRobloxCredentialFromEngine(JNIEnv* env) {
+  return SyncRobloxSignInFromEngine(env) == RobloxSignInState::kSignedIn;
+}
+
+RobloxSignInState VM::SyncRobloxSignInFromEngine(JNIEnv* env) {
   RobloxCookieGetter getter = nullptr;
   {
     std::lock_guard<std::mutex> lock(roblox_cookie_getter_mutex_);
     getter = roblox_cookie_getter_;
   }
   if (getter == nullptr || env == nullptr) {
-    return false;
+    return RobloxSignInState::kUnknown;
   }
 
   jstring domain = env->NewStringUTF("https://www.roblox.com/");
   if (domain == nullptr) {
-    return false;
+    return RobloxSignInState::kUnknown;
   }
   jstring cookies = getter(env, nullptr, domain);
   env->DeleteLocalRef(domain);
   if (cookies == nullptr) {
-    return false;
+    if (TraceEnabled()) {
+      std::cout << "  [JNI] engine cookies: the engine returned no string\n";
+    }
+    return RobloxSignInState::kUnknown;
   }
 
   std::string raw_cookie = StringFromJString(cookies);
   env->DeleteLocalRef(cookies);
-  std::string canonical_cookie = NormalizeCookieHeader(raw_cookie);
-  ClearCookieString(&raw_cookie);
-  if (canonical_cookie.empty()) {
-    return false;
+  std::string canonical_cookie;
+  bool several_sign_ins = false;
+  CookieList others;
+  std::vector<std::string> domains;
+  ForEachEngineCookie(raw_cookie, [&](std::string_view cookie_domain,
+                                      std::string_view name,
+                                      std::string_view value) {
+    if (!cookie_domain.empty() && !IsRobloxHost(cookie_domain)) {
+      return;
+    }
+    if (!cookie_domain.empty() && domains.size() < 8 &&
+        std::find(domains.begin(), domains.end(), cookie_domain) ==
+            domains.end()) {
+      domains.emplace_back(cookie_domain);
+    }
+    if (name != kSignInCookieName) {
+      PutCookie(&others, name, value);
+      return;
+    }
+    if (std::any_of(value.begin(), value.end(), [](char c) {
+          return static_cast<unsigned char>(c) <= 0x20;
+        })) {
+      return;
+    }
+    if (canonical_cookie.empty()) {
+      canonical_cookie.assign(kSignInCookieName);
+      canonical_cookie.push_back('=');
+      canonical_cookie.append(value);
+    } else if (std::string_view(canonical_cookie)
+                   .substr(kSignInCookieName.size() + 1) != value) {
+      several_sign_ins = true;
+    }
+  });
+  const bool netscape = raw_cookie.find('\t') != std::string::npos;
+  if (TraceEnabled()) {
+    std::string names;
+    for (const auto& other : others) {
+      names += (names.empty() ? "" : ", ") + other.first;
+    }
+    std::string listed_domains;
+    for (const std::string& listed : domains) {
+      listed_domains += (listed_domains.empty() ? "" : ", ") + listed;
+    }
+    std::cout << "  [JNI] engine cookies: bytes=" << raw_cookie.size()
+              << " format=" << (netscape ? "netscape" : "pairs")
+              << " sign_in="
+              << (canonical_cookie.empty()
+                      ? "no"
+                      : several_sign_ins ? "several" : "yes")
+              << " others=" << (names.empty() ? "none" : names)
+              << " domains="
+              << (listed_domains.empty() ? "none" : listed_domains) << '\n';
   }
-  StoreCookieHeader(canonical_cookie);
+  if (canonical_cookie.empty() && !netscape) {
+    canonical_cookie = NormalizeCookieHeader(raw_cookie);
+  }
+  const bool answered_nothing = raw_cookie.empty();
+  ClearCookieString(&raw_cookie);
+  const bool holds_other_cookies = !others.empty();
+  ApplyRobloxKeptCookies(others);
+  ClearCookieList(&others);
+  if (canonical_cookie.empty()) {
+    return holds_other_cookies ? RobloxSignInState::kSignedOut
+           : answered_nothing  ? RobloxSignInState::kNoCookies
+                               : RobloxSignInState::kUnknown;
+  }
+  if (!several_sign_ins) {
+    StoreCookieHeader(canonical_cookie);
+  }
   ClearCookieString(&canonical_cookie);
-  return true;
+  return RobloxSignInState::kSignedIn;
 }
 
 void VM::SetRobloxCredentialSink(

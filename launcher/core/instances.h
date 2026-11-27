@@ -14,9 +14,21 @@ namespace elixir::launcher {
 
 inline constexpr int kMaxRobloxWindows = 8;
 
+enum class InstanceSignIn {
+  kKeep,
+  kSavedAccount,
+  kSignedOut,
+};
+
+struct InstanceAccount {
+  InstanceSignIn sign_in = InstanceSignIn::kKeep;
+  std::wstring session_file;
+};
+
 LauncherPaths InstancePaths(const LauncherPaths& paths, int instance);
 
-bool PrepareInstance(const LauncherConfig& config, const LauncherPaths& paths, int instance, std::wstring* error);
+bool PrepareInstance(const LauncherConfig& config, const LauncherPaths& paths, int instance, std::wstring* error,
+                     const InstanceAccount& account = {});
 
 bool IsInstanceCopySkipped(const std::wstring& name);
 

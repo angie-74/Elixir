@@ -675,21 +675,32 @@ class Sequence {
 
   void RestoreSavedSession() {
     jnivm::VM* vm = shared_->vm;
-    std::string credential;
-    if (vm == nullptr || !vm->CopyRobloxCredentialFromProvider(&credential) || credential.empty()) return;
+    if (vm == nullptr) return;
+    std::string cookies;
+    const bool signed_in = vm->CopyRobloxCredentialFromProvider(&cookies) && !cookies.empty();
+    if (!signed_in) cookies.clear();
+    std::string kept;
+    const bool has_kept = vm->CopyRobloxKeptCookies(&kept);
+    if (has_kept) {
+      if (!cookies.empty()) cookies += "; ";
+      cookies += kept;
+    }
+    if (!kept.empty()) SecureZeroMemory(kept.data(), kept.size());
+    if (cookies.empty()) return;
     if (s_.set_multiple_cookies == nullptr) {
       Log("Roblox start-up: nativeSetMultipleCookies is not exported; the saved session cannot be restored");
     } else {
       JNIEnv* env = env_;
       jstring url = env->NewStringUTF("https://www.roblox.com/");
-      jstring cookies = env->NewStringUTF(credential.c_str());
-      s_.set_multiple_cookies(env, settings_, url, cookies);
-      env->DeleteLocalRef(cookies);
+      jstring value = env->NewStringUTF(cookies.c_str());
+      s_.set_multiple_cookies(env, settings_, url, value);
+      env->DeleteLocalRef(value);
       env->DeleteLocalRef(url);
-      Log("Roblox start-up: NativeSettings multipleCookies (saved session)");
+      Log(signed_in ? "Roblox start-up: NativeSettings multipleCookies (saved session)"
+                    : "Roblox start-up: NativeSettings multipleCookies (saved cookies)");
     }
-    SecureZeroMemory(credential.data(), credential.size());
-    credential.clear();
+    SecureZeroMemory(cookies.data(), cookies.size());
+    cookies.clear();
   }
 
   void ConfigureLocalStorage() {

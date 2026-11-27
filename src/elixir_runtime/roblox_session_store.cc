@@ -11,15 +11,29 @@
 #include <string>
 #include <vector>
 
+#include "jnivm/jnivm.h"
+
 namespace elixir::runtime {
 namespace {
 
-constexpr char kMagic[4] = {'E', 'L', 'X', 'S'};
+constexpr std::size_t kMagicBytes = 4;
 constexpr std::uint32_t kVersion = 1;
 constexpr std::string_view kPrefix = ".ROBLOSECURITY=";
 constexpr std::size_t kMaximumCredentialBytes = 64 * 1024;
 constexpr std::size_t kMaximumFileBytes = 128 * 1024;
-constexpr char kEntropy[] = "Elixir/com.roblox.client/session/v1";
+
+struct Format {
+  char magic[kMagicBytes];
+  std::string_view entropy;
+  const wchar_t* description;
+};
+
+constexpr Format kSessionFormat{{'E', 'L', 'X', 'S'}, "Elixir/com.roblox.client/session/v1", L"Elixir Roblox session"};
+constexpr Format kCookiesFormat{{'E', 'L', 'X', 'C'}, "Elixir/com.roblox.client/cookies/v1", L"Elixir Roblox cookies"};
+
+const Format& FormatOf(RobloxSessionStore::Content content) {
+  return content == RobloxSessionStore::Content::kCookies ? kCookiesFormat : kSessionFormat;
+}
 
 void WipeSecret(std::string* value) {
   if (!value->empty()) SecureZeroMemory(value->data(), value->size());
@@ -55,16 +69,26 @@ bool IsReparsePoint(const std::filesystem::path& path) {
   return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
 }
 
-DATA_BLOB EntropyBlob() {
+DATA_BLOB EntropyBlob(const Format& format) {
   DATA_BLOB blob{};
-  blob.pbData = reinterpret_cast<BYTE*>(const_cast<char*>(kEntropy));
-  blob.cbData = static_cast<DWORD>(sizeof(kEntropy) - 1);
+  blob.pbData = reinterpret_cast<BYTE*>(const_cast<char*>(format.entropy.data()));
+  blob.cbData = static_cast<DWORD>(format.entropy.size());
   return blob;
 }
 
 }
 
-RobloxSessionStore::RobloxSessionStore(std::filesystem::path file) : file_(std::move(file)) {}
+RobloxSessionStore::RobloxSessionStore(std::filesystem::path file, Content content)
+    : file_(std::move(file)), content_(content) {}
+
+bool RobloxSessionStore::IsCookieList(std::string_view cookies) {
+  return !cookies.empty() && cookies.size() <= jnivm::kMaximumRobloxKeptCookieBytes &&
+         jnivm::RobloxKeptCookiesFromHeader(cookies) == cookies;
+}
+
+bool RobloxSessionStore::Accepts(std::string_view value) const {
+  return content_ == Content::kCookies ? IsCookieList(value) : IsCanonical(value);
+}
 
 bool RobloxSessionStore::IsCanonical(std::string_view credential) {
   if (credential.size() <= kPrefix.size() || credential.size() > kMaximumCredentialBytes) return false;
@@ -76,8 +100,9 @@ bool RobloxSessionStore::IsCanonical(std::string_view credential) {
   return true;
 }
 
-bool RobloxSessionStore::EnsureFolder() const {
-  const std::filesystem::path folder = file_.parent_path();
+bool RobloxSessionStore::EnsureFolder() const { return EnsurePrivateFolder(file_.parent_path()); }
+
+bool RobloxSessionStore::EnsurePrivateFolder(const std::filesystem::path& folder) {
   if (folder.empty()) return false;
   std::error_code error;
   if (std::filesystem::is_directory(folder, error)) return !IsReparsePoint(folder);
@@ -117,8 +142,9 @@ RobloxSessionStore::LoadResult RobloxSessionStore::LoadLocked(std::string* crede
   BY_HANDLE_FILE_INFORMATION info{};
   LARGE_INTEGER size{};
   std::vector<BYTE> bytes;
+  const Format& format = FormatOf(content_);
   bool ok = GetFileInformationByHandle(handle, &info) && info.nNumberOfLinks == 1 && GetFileSizeEx(handle, &size) &&
-            size.QuadPart > static_cast<LONGLONG>(sizeof(kMagic) + sizeof(kVersion)) &&
+            size.QuadPart > static_cast<LONGLONG>(kMagicBytes + sizeof(kVersion)) &&
             size.QuadPart <= static_cast<LONGLONG>(kMaximumFileBytes);
   if (ok) {
     bytes.resize(static_cast<std::size_t>(size.QuadPart));
@@ -128,17 +154,17 @@ RobloxSessionStore::LoadResult RobloxSessionStore::LoadLocked(std::string* crede
   CloseHandle(handle);
   std::uint32_t version = 0;
   if (ok) {
-    std::memcpy(&version, bytes.data() + sizeof(kMagic), sizeof(version));
-    ok = std::memcmp(bytes.data(), kMagic, sizeof(kMagic)) == 0 && version == kVersion;
+    std::memcpy(&version, bytes.data() + kMagicBytes, sizeof(version));
+    ok = std::memcmp(bytes.data(), format.magic, kMagicBytes) == 0 && version == kVersion;
   }
   if (!ok) {
     WipeSecret(&bytes);
     return LoadResult::kUnreadable;
   }
   DATA_BLOB input{};
-  input.pbData = bytes.data() + sizeof(kMagic) + sizeof(version);
-  input.cbData = static_cast<DWORD>(bytes.size() - sizeof(kMagic) - sizeof(version));
-  DATA_BLOB entropy = EntropyBlob();
+  input.pbData = bytes.data() + kMagicBytes + sizeof(version);
+  input.cbData = static_cast<DWORD>(bytes.size() - kMagicBytes - sizeof(version));
+  DATA_BLOB entropy = EntropyBlob(format);
   DATA_BLOB output{};
   const BOOL decrypted =
       CryptUnprotectData(&input, nullptr, &entropy, nullptr, nullptr, CRYPTPROTECT_UI_FORBIDDEN, &output);
@@ -147,7 +173,7 @@ RobloxSessionStore::LoadResult RobloxSessionStore::LoadLocked(std::string* crede
   std::string value(reinterpret_cast<const char*>(output.pbData), output.cbData);
   SecureZeroMemory(output.pbData, output.cbData);
   LocalFree(output.pbData);
-  if (!IsCanonical(value)) {
+  if (!Accepts(value)) {
     WipeSecret(&value);
     return LoadResult::kUnreadable;
   }
@@ -160,24 +186,25 @@ RobloxSessionStore::LoadResult RobloxSessionStore::LoadLocked(std::string* crede
 }
 
 bool RobloxSessionStore::Save(std::string_view credential) {
-  if (!IsCanonical(credential)) return false;
+  if (!Accepts(credential)) return false;
   std::lock_guard<std::mutex> lock(mutex_);
   if (!EnsureFolder()) return false;
   if (IsReparsePoint(file_)) return false;
 
+  const Format& format = FormatOf(content_);
   DATA_BLOB input{};
   input.pbData = reinterpret_cast<BYTE*>(const_cast<char*>(credential.data()));
   input.cbData = static_cast<DWORD>(credential.size());
-  DATA_BLOB entropy = EntropyBlob();
+  DATA_BLOB entropy = EntropyBlob(format);
   DATA_BLOB output{};
-  if (!CryptProtectData(&input, L"Elixir Roblox session", &entropy, nullptr, nullptr, CRYPTPROTECT_UI_FORBIDDEN,
+  if (!CryptProtectData(&input, format.description, &entropy, nullptr, nullptr, CRYPTPROTECT_UI_FORBIDDEN,
                         &output)) {
     return false;
   }
-  std::vector<BYTE> bytes(sizeof(kMagic) + sizeof(kVersion) + output.cbData);
-  std::memcpy(bytes.data(), kMagic, sizeof(kMagic));
-  std::memcpy(bytes.data() + sizeof(kMagic), &kVersion, sizeof(kVersion));
-  std::memcpy(bytes.data() + sizeof(kMagic) + sizeof(kVersion), output.pbData, output.cbData);
+  std::vector<BYTE> bytes(kMagicBytes + sizeof(kVersion) + output.cbData);
+  std::memcpy(bytes.data(), format.magic, kMagicBytes);
+  std::memcpy(bytes.data() + kMagicBytes, &kVersion, sizeof(kVersion));
+  std::memcpy(bytes.data() + kMagicBytes + sizeof(kVersion), output.pbData, output.cbData);
   LocalFree(output.pbData);
 
   std::filesystem::path temporary = file_;

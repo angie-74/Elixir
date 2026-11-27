@@ -40,6 +40,7 @@ LauncherPaths LauncherPathsForDataRoot(const std::wstring& exe_dir, const std::w
   paths.android_data_dir = JoinPath(data_root, L"data");
   paths.guest_tmp_dir = JoinPath(data_root, L"tmp");
   paths.bundle_dir = JoinPath(data_root, L"bundled");
+  paths.accounts_dir = JoinPath(JoinPath(data_root, L"auth"), L"accounts");
   if (!BuiltInProgram().empty()) {
     paths.runtime_exe = BuiltInProgram();
     paths.runtime_flag = kRuntimeModeFlag;

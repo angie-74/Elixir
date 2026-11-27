@@ -177,6 +177,7 @@ struct ExperienceSession::Impl {
   mw::ScopedPresentObserver present_observer;
   PresenceState presence;
   std::uint64_t presence_reported = 0;
+  std::function<void(bool)> in_game_changed;
   std::shared_ptr<mr::ExternalLaunchBroker> link_broker;
   std::size_t waiting_reported = 0;
   bool roblox_started = false;
@@ -236,6 +237,7 @@ std::unique_ptr<ExperienceSession> ExperienceSession::Create(void* roblox, jnivm
   auto impl = std::make_unique<Impl>();
   impl->vm = vm;
   impl->presence.forward = options.presence;
+  impl->in_game_changed = options.in_game_changed;
   const mr::RobloxExperienceJniFactory jni_factory{vm,
                                                    &CreateExperienceRawCallback,
                                                    &ClearExperienceRawCallback,
@@ -408,6 +410,7 @@ void ExperienceSession::ReportPresence() {
     phase = s.presence.phase;
   }
   EmitEvent(3, "join", JoinState(phase));
+  if (s.in_game_changed) s.in_game_changed(phase != mr::RobloxExperiencePresencePhase::kBrowsing);
 }
 
 bool ExperienceSession::subscribed() const {

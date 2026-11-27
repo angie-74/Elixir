@@ -176,6 +176,8 @@ const std::vector<OptionSpec>& Options() {
          return {};
        }},
       {"--mods-dir", true, [](LaunchOptions* o, const std::string& v) { return PathOption(&o->mods_dir, v); }},
+      {"--accounts-dir", true,
+       [](LaunchOptions* o, const std::string& v) { return PathOption(&o->accounts_dir, v); }},
       {"--controller", true, [](LaunchOptions* o, const std::string& v) { return OnOff(&o->controller, v); }},
       {"--user-fflags", true, [](LaunchOptions* o, const std::string& v) { return OnOff(&o->user_fflags, v); }},
       {"--discord", true,
@@ -357,6 +359,7 @@ std::string RuntimeUsage() {
            "  --data-dir <dir>  --config <config.json>  --crash-dir <dir>  --fflags <fflags.json>\n"
            "  --user-fflags on|off        off: start Roblox with none of the Fast Flags file's flags\n"
            "  --instance <2-8>            one of several Roblox windows (its own --data-dir; title \"Elixir (n)\")\n"
+           "  --accounts-dir <dir>        saved accounts shared by every Roblox window (default: auth\\accounts)\n"
            "  --guest-runtime <dir>       Android-side runtime libraries (default: guest-runtime next to the exe)\n"
            "\n"
            "Settings (default: config.json):\n"
@@ -408,6 +411,7 @@ std::vector<std::string> FormatRuntimeArguments(const LaunchOptions& options) {
   if (!options.crash_dir.empty()) add("--crash-dir", NativeUtf8(options.crash_dir));
   if (!options.fflags_file.empty()) add("--fflags", NativeUtf8(options.fflags_file));
   if (!options.mods_dir.empty()) add("--mods-dir", NativeUtf8(options.mods_dir));
+  if (!options.accounts_dir.empty()) add("--accounts-dir", NativeUtf8(options.accounts_dir));
   if (!options.guest_runtime_dir.empty()) add("--guest-runtime", NativeUtf8(options.guest_runtime_dir));
   if (!options.renderer.empty()) add("--renderer", options.renderer);
   if (!options.present_mode.empty()) add("--present-mode", options.present_mode);

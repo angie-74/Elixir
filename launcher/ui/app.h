@@ -17,6 +17,7 @@
 #include <thread>
 #include <vector>
 
+#include "core/accounts.h"
 #include "core/apk_component.h"
 #include "core/audio_devices.h"
 #include "core/cache_cleaner.h"
@@ -29,6 +30,7 @@
 #include "core/process.h"
 #include "core/releases.h"
 #include "core/instance.h"
+#include "core/instances.h"
 #include "core/link_request.h"
 #include "core/roblox_download.h"
 #include "core/roblox_links.h"
@@ -177,6 +179,10 @@ class App final : public AccessibilityHost {
   bool fast_flags_dirty() const;
   const std::wstring& fast_flags_message() const { return fast_flags_.message; }
   void DeferForTest(std::function<void()> action) { Defer(std::move(action)); }
+  void SetRuntimeRunningForTest(bool running) {
+    runtime_.running = running;
+    Invalidate();
+  }
   const InstallerOutcome& installer_outcome() const { return installer_outcome_; }
   const PromptResult& prompt_result() const { return prompt_result_; }
   int installer_step() const { return installer_.step; }
@@ -461,7 +467,14 @@ class App final : public AccessibilityHost {
   void StartLauncherServices();
   void ChooseLaunchAction(LaunchMenuAction action);
   void StopRuntime();
-  void OpenAnotherWindow();
+  void ChooseInstanceAccount();
+  void RefreshInstanceAccounts();
+  void RefreshAccountPictures();
+  void StartInstanceWith(int row);
+  void RemoveInstanceAccount(int row);
+  bool OnInstanceOverlayAction(const std::wstring& id);
+  void BuildInstanceAccountMenu(Ui& ui, const D2D1_RECT_F& button);
+  void OpenAnotherWindow(InstanceAccount account = {});
   int FreeWindowNumber();
   void OnRuntimeExited(DWORD exit_code);
   void OnRuntimeEvent(const RuntimeEvent& event);
@@ -585,7 +598,15 @@ class App final : public AccessibilityHost {
     int number = 0;
     HANDLE process = nullptr;
   };
+  struct InstanceAccountRow {
+    SavedAccount account;
+    AccountUse use = AccountUse::kNotOpen;
+  };
   std::vector<ExtraWindow> extra_windows_;
+  std::vector<InstanceAccountRow> instance_accounts_;
+  InstanceAccount pending_instance_account_;
+  bool account_pictures_loading_ = false;
+  ULONGLONG account_pictures_checked_ = 0;
   bool opening_window_ = false;
   static constexpr ULONGLONG kRuntimeProbeMaxAgeMs = 2000;
   bool runtime_probe_valid_ = false;
@@ -599,6 +620,7 @@ class App final : public AccessibilityHost {
   std::wstring global_quality_override_;
   bool global_data_in_use_ = false;
   static constexpr wchar_t kTextSizeControl[] = L"global.textsize";
+  static constexpr wchar_t kInstanceAccountControl[] = L"bar.window";
   static constexpr std::array<const wchar_t*, 4> kTextSizes{L"Medium", L"Large", L"Larger", L"Largest"};
   std::wstring menu_control_;
   int menu_focus_ = -1;

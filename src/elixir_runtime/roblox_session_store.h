@@ -18,7 +18,12 @@ class RobloxSessionStore final {
     kUnreadable,
   };
 
-  explicit RobloxSessionStore(std::filesystem::path file);
+  enum class Content {
+    kSession,
+    kCookies,
+  };
+
+  explicit RobloxSessionStore(std::filesystem::path file, Content content = Content::kSession);
 
   RobloxSessionStore(const RobloxSessionStore&) = delete;
   RobloxSessionStore& operator=(const RobloxSessionStore&) = delete;
@@ -31,12 +36,16 @@ class RobloxSessionStore final {
   const std::filesystem::path& file() const { return file_; }
 
   static bool IsCanonical(std::string_view credential);
+  static bool IsCookieList(std::string_view cookies);
+  static bool EnsurePrivateFolder(const std::filesystem::path& folder);
 
  private:
+  bool Accepts(std::string_view value) const;
   bool EnsureFolder() const;
   LoadResult LoadLocked(std::string* credential) const;
 
   std::filesystem::path file_;
+  Content content_;
   mutable std::mutex mutex_;
 };
 

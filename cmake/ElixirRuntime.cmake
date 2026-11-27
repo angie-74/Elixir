@@ -77,7 +77,10 @@ if(TARGET elixir_vulkan)
 endif()
 if(TARGET elixir_jnivm)
   target_sources(elixir_runtime_core PRIVATE
+    src/elixir_runtime/account_book.cc
+    src/elixir_runtime/account_use.cc
     src/elixir_runtime/app_restart.cc
+    src/elixir_runtime/kept_cookies.cc
     src/elixir_runtime/roblox_startup.cc
     src/elixir_runtime/sign_in_identity.cc
     src/elixir_runtime/roblox_session_store.cc)
@@ -169,7 +172,10 @@ target_compile_definitions(elixir_runtime_test PRIVATE
 if(TARGET elixir_jnivm)
   elixir_gtest(elixir_runtime_identity_test
     tests/auth_service_test.cc
+    "${ELIXIR_RUNTIME_TESTS}/account_book_test.cc"
+    "${ELIXIR_RUNTIME_TESTS}/account_use_test.cc"
     "${ELIXIR_RUNTIME_TESTS}/app_restart_test.cc"
+    "${ELIXIR_RUNTIME_TESTS}/kept_cookies_test.cc"
     "${ELIXIR_RUNTIME_TESTS}/sign_in_identity_test.cc")
   target_link_libraries(elixir_runtime_identity_test PRIVATE elixir_runtime_core)
 endif()

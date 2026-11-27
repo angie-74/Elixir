@@ -23,6 +23,7 @@ class HttpClient;
 
 namespace elixir::runtime {
 
+class AccountBook;
 class RobloxSessionStore;
 
 class SignInIdentity final {
@@ -34,6 +35,9 @@ class SignInIdentity final {
                                                         std::chrono::seconds(30)};
     std::chrono::milliseconds shutdown_wait{2000};
     std::shared_ptr<RobloxSessionStore> store;
+    std::shared_ptr<AccountBook> accounts;
+    std::function<long long()> now_seconds;
+    std::function<void(long long user_id)> account_changed;
   };
 
   static std::unique_ptr<SignInIdentity> Install(jnivm::VM& vm, Options options);

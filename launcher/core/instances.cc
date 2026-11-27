@@ -13,12 +13,14 @@
 #include <system_error>
 #include <vector>
 
+#include "core/accounts.h"
 #include "core/util.h"
 
 namespace elixir::launcher {
 namespace {
 
 constexpr wchar_t kSessionFile[] = L"roblox-session.dpapi";
+constexpr wchar_t kCookiesFile[] = L"roblox-cookies.dpapi";
 
 std::wstring Lower(std::wstring text) {
   std::transform(text.begin(), text.end(), text.begin(), [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
@@ -158,10 +160,17 @@ LauncherPaths InstancePaths(const LauncherPaths& paths, int instance) {
   result.runtime_flag = paths.runtime_flag;
   result.guest_runtime_dir = paths.guest_runtime_dir;
   result.bundle_dir = paths.bundle_dir;
+  result.accounts_dir = paths.accounts_dir;
   return result;
 }
 
-bool PrepareInstance(const LauncherConfig& config, const LauncherPaths& paths, int instance, std::wstring* error) {
+bool PrepareInstance(const LauncherConfig& config, const LauncherPaths& paths, int instance, std::wstring* error,
+                     const InstanceAccount& account) {
+  if (account.sign_in == InstanceSignIn::kSavedAccount &&
+      !IsSavedAccountSession(paths.accounts_dir, account.session_file)) {
+    if (error != nullptr) *error = L"that saved account is no longer there";
+    return false;
+  }
   const LauncherPaths target = InstancePaths(paths, instance);
   if (!EnsureDirectory(target.data_root, error)) return false;
   const std::string& package = config.installed.package.empty() ? std::string("com.roblox.client") : config.installed.package;
@@ -181,14 +190,51 @@ bool PrepareInstance(const LauncherConfig& config, const LauncherPaths& paths, i
       return false;
     }
   }
-  const std::wstring source_auth = JoinPath(JoinPath(paths.data_root, L"auth"), kSessionFile);
+  const std::wstring source_auth_folder = JoinPath(paths.data_root, L"auth");
   const std::wstring target_auth_folder = JoinPath(target.data_root, L"auth");
   const std::wstring target_auth = JoinPath(target_auth_folder, kSessionFile);
-  if (!PathIsFile(target_auth) && PathIsFile(source_auth)) {
-    if (!CreatePrivateFolder(target_auth_folder) || !CopyFileW(source_auth.c_str(), target_auth.c_str(), TRUE)) {
-      if (error != nullptr) *error = L"could not copy the saved sign-in";
+  const auto copy_failed = [error] {
+    if (error != nullptr) *error = L"could not copy the saved sign-in";
+    return false;
+  };
+  const std::wstring source_cookies = JoinPath(source_auth_folder, kCookiesFile);
+  const std::wstring target_cookies = JoinPath(target_auth_folder, kCookiesFile);
+  if (account.sign_in != InstanceSignIn::kKeep) {
+    if (PathIsFile(target_cookies) && !DeleteFileW(target_cookies.c_str())) {
+      if (error != nullptr) *error = L"could not remove the cookies of the account the window had before";
       return false;
     }
+  } else if (!PathIsFile(target_cookies) && PathIsFile(source_cookies) && !PathIsFile(target_auth)) {
+    if (!CreatePrivateFolder(target_auth_folder) || !CopyFileW(source_cookies.c_str(), target_cookies.c_str(), TRUE)) {
+      return copy_failed();
+    }
+  }
+  switch (account.sign_in) {
+    case InstanceSignIn::kKeep: {
+      const std::wstring source_auth = JoinPath(source_auth_folder, kSessionFile);
+      if (!PathIsFile(target_auth) && PathIsFile(source_auth)) {
+        if (!CreatePrivateFolder(target_auth_folder) || !CopyFileW(source_auth.c_str(), target_auth.c_str(), TRUE)) {
+          return copy_failed();
+        }
+      }
+      break;
+    }
+    case InstanceSignIn::kSavedAccount: {
+      const std::wstring partial = target_auth + L".part";
+      if (!CreatePrivateFolder(target_auth_folder) ||
+          !CopyFileW(account.session_file.c_str(), partial.c_str(), FALSE) ||
+          !MoveFileExW(partial.c_str(), target_auth.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        DeleteFileW(partial.c_str());
+        return copy_failed();
+      }
+      break;
+    }
+    case InstanceSignIn::kSignedOut:
+      if (PathIsFile(target_auth) && !DeleteFileW(target_auth.c_str())) {
+        if (error != nullptr) *error = L"could not remove the saved sign-in";
+        return false;
+      }
+      break;
   }
   return true;
 }

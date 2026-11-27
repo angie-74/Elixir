@@ -137,7 +137,120 @@ int App::FreeWindowNumber() {
   return 0;
 }
 
-void App::OpenAnotherWindow() {
+void App::RefreshInstanceAccounts() {
+  instance_accounts_.clear();
+  for (SavedAccount& account : ListSavedAccounts(paths_.accounts_dir)) {
+    const AccountUse use = QueryAccountUse(account.id);
+    instance_accounts_.push_back(InstanceAccountRow{std::move(account), use});
+  }
+}
+
+void App::RefreshAccountPictures() {
+  constexpr ULONGLONG kCheckEveryMs = 60000;
+  const HttpGetFunction get = WebGet();
+  if (!get || account_pictures_loading_ || instance_accounts_.empty()) return;
+  const bool missing = std::any_of(instance_accounts_.begin(), instance_accounts_.end(),
+                                   [](const InstanceAccountRow& row) { return row.account.picture_file.empty(); });
+  const ULONGLONG now = GetTickCount64();
+  if (!missing && account_pictures_checked_ != 0 && now - account_pictures_checked_ < kCheckEveryMs) return;
+  account_pictures_loading_ = true;
+  account_pictures_checked_ = now;
+  std::vector<SavedAccount> accounts;
+  for (const InstanceAccountRow& row : instance_accounts_) accounts.push_back(row.account);
+  const std::wstring folder = paths_.accounts_dir;
+  RunInBackground([this, folder, accounts, get]() -> std::function<void()> {
+    const int changed = elixir::launcher::RefreshAccountPictures(folder, accounts, get);
+    return [this, changed] {
+      account_pictures_loading_ = false;
+      if (changed > 0 && MenuOpen(kInstanceAccountControl)) {
+        RefreshInstanceAccounts();
+        Invalidate();
+      }
+    };
+  });
+}
+
+void App::ChooseInstanceAccount() {
+  if (!runtime_.running || runtime_.stopping || opening_window_) return;
+  if (MenuOpen(kInstanceAccountControl)) {
+    CloseMenu();
+    return;
+  }
+  RefreshInstanceAccounts();
+  if (instance_accounts_.empty()) {
+    OpenAnotherWindow();
+    return;
+  }
+  SetMenu(kInstanceAccountControl, 0, static_cast<int>(instance_accounts_.size()) + 1);
+  RefreshAccountPictures();
+}
+
+void App::StartInstanceWith(int row) {
+  const int count = static_cast<int>(instance_accounts_.size());
+  if (row < 0 || row > count || !MenuOpen(kInstanceAccountControl)) return;
+  InstanceAccount account;
+  AccountUse use = AccountUse::kNotOpen;
+  std::wstring name;
+  if (row < count) {
+    const SavedAccount& saved = instance_accounts_[static_cast<std::size_t>(row)].account;
+    account.sign_in = InstanceSignIn::kSavedAccount;
+    account.session_file = saved.session_file;
+    use = QueryAccountUse(saved.id);
+    name = SavedAccountName(saved);
+  } else {
+    account.sign_in = InstanceSignIn::kSignedOut;
+  }
+  CloseMenu();
+  if (use == AccountUse::kNotOpen) {
+    OpenAnotherWindow(account);
+    return;
+  }
+  pending_instance_account_ = account;
+  Overlay overlay;
+  overlay.id = L"instance.in-use";
+  overlay.status = 1;
+  if (use == AccountUse::kInGame) {
+    overlay.title = name + L" is in a game";
+    overlay.body = L"This account is playing in another Roblox window. If the new window joins a game too, "
+                   L"Roblox disconnects the other one.";
+  } else {
+    overlay.title = name + L" is already open";
+    overlay.body = L"This account is signed in in another Roblox window. If both join a game, Roblox "
+                   L"disconnects one of them.";
+  }
+  overlay.actions = {{L"instance.open", L"Open anyway", ButtonStyle::kStandard},
+                     {L"overlay.close", L"Cancel", ButtonStyle::kStandard}};
+  ShowOverlay(std::move(overlay));
+}
+
+bool App::OnInstanceOverlayAction(const std::wstring& id) {
+  if (id != L"instance.open") return false;
+  const InstanceAccount account = pending_instance_account_;
+  pending_instance_account_ = {};
+  CloseOverlay();
+  if (account.sign_in != InstanceSignIn::kKeep) OpenAnotherWindow(account);
+  return true;
+}
+
+void App::RemoveInstanceAccount(int row) {
+  if (row < 0 || row >= static_cast<int>(instance_accounts_.size()) || !MenuOpen(kInstanceAccountControl)) return;
+  const SavedAccount account = instance_accounts_[static_cast<std::size_t>(row)].account;
+  std::wstring error;
+  if (!RemoveSavedAccount(paths_.accounts_dir, account.id, &error)) {
+    ShowToast(error);
+    return;
+  }
+  RefreshInstanceAccounts();
+  const int count = static_cast<int>(instance_accounts_.size());
+  if (count == 0) {
+    CloseMenu();
+  } else {
+    SetMenu(kInstanceAccountControl, std::min(row, count), count + 1);
+  }
+  ShowToast(L"Removed " + SavedAccountLabel(account) + L".");
+}
+
+void App::OpenAnotherWindow(InstanceAccount account) {
   if (!runtime_.running || runtime_.stopping || opening_window_) return;
   const int number = FreeWindowNumber();
   if (number == 0) {
@@ -148,9 +261,9 @@ void App::OpenAnotherWindow() {
   Invalidate();
   const LauncherConfig config = config_;
   const LauncherPaths paths = paths_;
-  RunInBackground([this, config, paths, number]() -> std::function<void()> {
+  RunInBackground([this, config, paths, number, account]() -> std::function<void()> {
     std::wstring error;
-    const bool prepared = PrepareInstance(config, paths, number, &error);
+    const bool prepared = PrepareInstance(config, paths, number, &error, account);
     return [this, config, paths, number, prepared, error] {
       opening_window_ = false;
       if (!prepared) {
