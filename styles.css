@@ -260,6 +260,22 @@ main > section,
   border-color: var(--edge-strong);
 }
 
+.notice {
+  max-width: 500px;
+  margin: 24px auto 0;
+  padding: 12px 18px;
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  color: var(--muted);
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+
+.notice strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .window {
   margin: 56px auto 0;
   max-width: 1000px;
@@ -276,8 +292,13 @@ main > section,
 .hero h1,
 .hero .lead,
 .hero .actions,
+.hero .notice,
 .hero .window {
   animation: rise 0.7s var(--ease) both;
+}
+
+.hero .notice {
+  animation-delay: 0.19s;
 }
 
 .hero .lead {
@@ -569,6 +590,7 @@ main > section,
   .hero h1,
   .hero .lead,
   .hero .actions,
+  .hero .notice,
   .hero .window,
   .answers details[open] p {
     animation: none;
