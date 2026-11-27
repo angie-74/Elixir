@@ -6,6 +6,7 @@
 #include <cwctype>
 
 #include "core/util.h"
+#include "core/i18n.h"
 
 namespace elixir::launcher {
 
@@ -99,12 +100,12 @@ bool IsProtectedFromCleaning(std::wstring_view file_name) {
 std::vector<CacheLocation> ClientCacheLocations(const LauncherPaths& paths, std::string_view package, bool measure) {
   const std::wstring app = AndroidAppDataDirectory(paths, package);
   std::vector<CacheLocation> locations = {
-      {L"android-cache", L"Roblox cache", L"Files Roblox keeps to load faster.", JoinPath(app, L"cache")},
-      {L"code-cache", L"Code cache", L"Files Roblox can rebuild.", JoinPath(app, L"code_cache")},
-      {L"roblox-logs", L"Roblox logs", L"Roblox’s own logs of earlier sessions.",
+      {L"android-cache", T(L"Roblox cache"), T(L"Files Roblox keeps to load faster."), JoinPath(app, L"cache")},
+      {L"code-cache", T(L"Code cache"), T(L"Files Roblox can rebuild."), JoinPath(app, L"code_cache")},
+      {L"roblox-logs", T(L"Roblox logs"), T(L"Roblox’s own logs of earlier sessions."),
        JoinPath(JoinPath(JoinPath(app, L"files"), L"appData"), L"logs")},
-      {L"temp", L"Temporary files", L"Leftovers from earlier installs and sessions.", paths.guest_tmp_dir},
-      {L"downloads", L"Interrupted downloads", L"Partial Roblox downloads kept so they can resume.",
+      {L"temp", T(L"Temporary files"), T(L"Leftovers from earlier installs and sessions."), paths.guest_tmp_dir},
+      {L"downloads", T(L"Interrupted downloads"), T(L"Partial Roblox downloads kept so they can resume."),
        paths.downloads_dir},
   };
   for (CacheLocation& location : locations) {
@@ -124,7 +125,7 @@ std::vector<CacheLocation> ClientCacheLocations(const LauncherPaths& paths, std:
 CacheClearResult ClearClientCaches(const LauncherPaths& paths, std::string_view package, bool runtime_running) {
   CacheClearResult result;
   if (runtime_running) {
-    result.error = L"Roblox is running. Close Roblox, then clear the caches.";
+    result.error = T(L"Roblox is running. Close Roblox, then clear the caches.");
     return result;
   }
   for (const CacheLocation& location : ClientCacheLocations(paths, package, false)) {
@@ -133,9 +134,8 @@ CacheClearResult ClearClientCaches(const LauncherPaths& paths, std::string_view 
   }
   result.ok = result.failures.empty();
   if (!result.ok) {
-    result.error = result.failures.size() == 1
-                       ? std::wstring(L"1 file couldn’t be deleted. It may be in use.")
-                       : std::to_wstring(result.failures.size()) + L" files couldn’t be deleted. They may be in use.";
+    result.error = TN(result.failures.size(), L"{0} file couldn’t be deleted. It may be in use.",
+                      L"{0} files couldn’t be deleted. They may be in use.");
   }
   return result;
 }

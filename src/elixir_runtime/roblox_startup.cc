@@ -266,13 +266,11 @@ std::string ResolutionText(const mocktail::runtime::DisplaySize& size) {
 }
 
 mocktail::runtime::DisplaySize SurfaceSize(const RobloxStartupOptions& options) {
-  return {static_cast<std::int32_t>(ScaledExtent(options.window.width, options.surface_scale)),
-          static_cast<std::int32_t>(ScaledExtent(options.window.height, options.surface_scale))};
+  return {static_cast<std::int32_t>(ScaledWidth(options.window.width, options.surface_scale)),
+          static_cast<std::int32_t>(ScaledHeight(options.window.height, options.surface_scale))};
 }
 
-float SurfaceDpiScale(const RobloxStartupOptions& options) {
-  return RendersSmaller(options.surface_scale) ? options.dpi_scale * options.surface_scale : options.dpi_scale;
-}
+float SurfaceDpiScale(const RobloxStartupOptions& options) { return options.dpi_scale * options.surface_scale.y(); }
 
 jobject BuildDeviceParams(JNIEnv* env, const RobloxStartupOptions& options) {
   jobject params = NewObject(env, "com/roblox/engine/jni/model/DeviceParams");

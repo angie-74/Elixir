@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "graphics/render_scale.h"
 #include "runtime/display_size.h"
 #include "runtime/runtime_config.h"
 
@@ -34,7 +35,7 @@ struct RobloxStartupOptions {
   mocktail::runtime::DisplaySize display;
   mocktail::runtime::DisplaySize window;
   float dpi_scale = 1.0f;
-  float surface_scale = 1.0f;
+  RenderScale surface_scale;
   bool headless = false;
 
   void* native_window = nullptr;

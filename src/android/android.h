@@ -15,6 +15,8 @@
 #include <string_view>
 #include <vector>
 
+#include "graphics/render_scale.h"
+
 struct ANativeWindow;
 struct AAssetManager;
 struct AInputQueue;
@@ -40,8 +42,8 @@ ANativeWindow* CreateNativeWindow(HWND hwnd, int width, int height);
 void ResizeNativeWindow(ANativeWindow* window, int width, int height);
 void DestroyNativeWindow(ANativeWindow* window);
 void AssociateSurface(const void* java_surface, ANativeWindow* window);
-void SetSurfaceRenderScale(const void* java_surface, float scale);
-void SetNativeWindowRenderScale(ANativeWindow* window, float scale);
+void SetSurfaceRenderScale(const void* java_surface, const RenderScale& scale);
+void SetNativeWindowRenderScale(ANativeWindow* window, const RenderScale& scale);
 void ResetSurfaceRenderScales();
 
 struct NativeWindowInfo {

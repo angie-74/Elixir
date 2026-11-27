@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -36,6 +37,7 @@ class SignInIdentity final {
     std::chrono::milliseconds shutdown_wait{2000};
     std::shared_ptr<RobloxSessionStore> store;
     std::shared_ptr<AccountBook> accounts;
+    std::filesystem::path account_file;
     std::function<long long()> now_seconds;
     std::function<void(long long user_id)> account_changed;
   };

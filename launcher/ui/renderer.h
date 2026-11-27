@@ -64,6 +64,7 @@ class Renderer {
   float dpi() const { return dpi_; }
 
   void BeginOffscreen(ID2D1RenderTarget* target, float dpi);
+  bool SyncLanguage();
   void EndOffscreen();
   ID2D1Factory* factory() const { return factory_.Get(); }
   IWICImagingFactory* wic() const { return wic_.Get(); }
@@ -73,6 +74,8 @@ class Renderer {
 
   IDWriteTextLayout* Layout(std::wstring_view text, TextStyle style, float max_width, bool wrap = true,
                             Align align = Align::kLeading, bool ellipsis = false);
+  IDWriteTextLayout* FittedLayout(std::wstring_view text, TextStyle style, float max_width, Align align,
+                                  float min_scale);
   D2D1_SIZE_F Measure(std::wstring_view text, TextStyle style, float max_width, bool wrap = true);
   ComPtr<IDWriteTextLayout> UncachedLayout(std::wstring_view text, TextStyle style, float max_width);
 
@@ -96,6 +99,8 @@ class Renderer {
 
  private:
   IDWriteTextFormat* Format(TextStyle style) { return formats_[static_cast<int>(style)].Get(); }
+  bool CreateFormats();
+  void ApplyDirection(IDWriteTextLayout* layout, std::wstring_view text, Align align) const;
   std::wstring PickFamily(std::initializer_list<const wchar_t*> candidates);
 
   ComPtr<ID2D1Factory> factory_;
@@ -144,6 +149,9 @@ class Renderer {
   std::wstring display_family_;
   std::wstring icon_family_;
   std::wstring mono_family_;
+  std::wstring locale_ = L"en-us";
+  bool right_to_left_ = false;
+  std::uint64_t language_generation_ = 0;
   float dpi_ = 96.0f;
 };
 

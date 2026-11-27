@@ -10,6 +10,7 @@
 
 #include "core/json.h"
 #include "core/util.h"
+#include "core/i18n.h"
 
 namespace elixir::launcher {
 
@@ -33,20 +34,20 @@ bool AllDigits(std::wstring_view text) {
 
 bool CopyAndFlush(const std::wstring& from, const std::wstring& to, std::wstring* error) {
   if (!CopyFileExW(Long(from).c_str(), Long(to).c_str(), nullptr, nullptr, nullptr, COPY_FILE_FAIL_IF_EXISTS)) {
-    *error = WithErrorCause(L"A file couldn’t be copied.", GetLastError());
+    *error = WithErrorCause(T(L"A file couldn’t be copied."), GetLastError());
     return false;
   }
   HANDLE file = CreateFileW(Long(to).c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
                             FILE_ATTRIBUTE_NORMAL, nullptr);
   if (file == INVALID_HANDLE_VALUE) {
-    *error = WithErrorCause(L"A file couldn’t be copied.", GetLastError());
+    *error = WithErrorCause(T(L"A file couldn’t be copied."), GetLastError());
     return false;
   }
   const bool flushed = FlushFileBuffers(file) != FALSE;
   const DWORD flush_error = GetLastError();
   CloseHandle(file);
   if (!flushed) {
-    *error = WithErrorCause(L"A file couldn’t be copied.", flush_error);
+    *error = WithErrorCause(T(L"A file couldn’t be copied."), flush_error);
     return false;
   }
   return true;
@@ -60,7 +61,7 @@ struct CopyStats {
 
 bool CopyTree(const std::wstring& from, const std::wstring& to, CopyStats* stats, std::wstring* error) {
   if (!CreateDirectoryW(Long(to).c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) {
-    *error = WithErrorCause(L"A folder couldn’t be created.", GetLastError());
+    *error = WithErrorCause(T(L"A folder couldn’t be created."), GetLastError());
     return false;
   }
   WIN32_FIND_DATAW data{};
@@ -68,7 +69,7 @@ bool CopyTree(const std::wstring& from, const std::wstring& to, CopyStats* stats
   if (find == INVALID_HANDLE_VALUE) {
     const DWORD code = GetLastError();
     if (code == ERROR_FILE_NOT_FOUND) return true;
-    *error = WithErrorCause(L"A folder couldn’t be read.", code);
+    *error = WithErrorCause(T(L"A folder couldn’t be read."), code);
     return false;
   }
   bool ok = true;
@@ -98,7 +99,7 @@ bool CopyTree(const std::wstring& from, const std::wstring& to, CopyStats* stats
 
 bool MoveFolder(const std::wstring& from, const std::wstring& to, std::wstring* error) {
   if (MoveFileExW(Long(from).c_str(), Long(to).c_str(), MOVEFILE_WRITE_THROUGH)) return true;
-  *error = WithErrorCause(L"A folder couldn’t be moved.", GetLastError());
+  *error = WithErrorCause(T(L"A folder couldn’t be moved."), GetLastError());
   return false;
 }
 
@@ -150,7 +151,7 @@ RobloxUpdateSteps RealRobloxUpdateSteps(const RobloxUpdateRequest& request) {
     std::wstring error;
     if (!LoadSigningPins(LocateSigningPins(request.exe_dir), &pins, &error)) {
       ApkResult failed;
-      failed.error = L"Elixir’s list of Roblox signing certificates is missing. Reinstall Elixir to fix this.";
+      failed.error = T(L"Elixir’s list of Roblox signing certificates is missing. Reinstall Elixir to fix this.");
       failed.log = "signing pins: " + WideToUtf8(error) + "\n";
       return failed;
     }
@@ -204,7 +205,7 @@ RobloxUpdateOutcome UpdateRoblox(const RobloxUpdateRequest& request, const Roblo
     const RobloxReleaseList list = steps.list(cancel);
     if (cancelled()) return stop();
     if (!list.ok || list.pinned) {
-      return fail(list.error.empty() ? std::wstring(L"Couldn’t get the list of Roblox versions.") : list.error);
+      return fail(list.error.empty() ? std::wstring(T(L"Couldn’t get the list of Roblox versions.")) : list.error);
     }
     if (!NewerRobloxRelease(list, request.installed_code, &release)) {
       outcome.result = Result::kUpToDate;
@@ -230,7 +231,7 @@ RobloxUpdateOutcome UpdateRoblox(const RobloxUpdateRequest& request, const Roblo
   outcome.log += download.log;
   if (download.cancelled || cancelled()) return stop();
   if (!download.ok) {
-    return fail(download.error.empty() ? std::wstring(L"Couldn’t download Roblox. Check your connection and try again.")
+    return fail(download.error.empty() ? std::wstring(T(L"Couldn’t download Roblox. Check your connection and try again."))
                                        : download.error);
   }
   std::vector<std::wstring> files;
@@ -244,14 +245,14 @@ RobloxUpdateOutcome UpdateRoblox(const RobloxUpdateRequest& request, const Roblo
   if (!verified.ok) {
     steps.discard(download.directory);
     return fail(verified.error.empty()
-                    ? std::wstring(L"The downloaded Roblox files didn’t pass Elixir’s checks, so they were deleted.")
+                    ? std::wstring(T(L"The downloaded Roblox files didn’t pass Elixir’s checks, so they were deleted."))
                     : verified.error);
   }
   if (verified.metadata.version_code != release.version_code) {
     steps.discard(download.directory);
     outcome.log += "the download is versionCode " + std::to_string(verified.metadata.version_code) +
                    ", the list named " + std::to_string(release.version_code) + "\n";
-    return fail(L"The download wasn’t the Roblox version it was listed as, so it was deleted.");
+    return fail(T(L"The download wasn’t the Roblox version it was listed as, so it was deleted."));
   }
 
   report(RobloxUpdatePhase::kInstalling, version, -1);
@@ -261,7 +262,7 @@ RobloxUpdateOutcome UpdateRoblox(const RobloxUpdateRequest& request, const Roblo
   outcome.log += installed.log;
   if (!installed.ok) {
     if (cancelled()) return stop();
-    return fail(installed.error.empty() ? std::wstring(L"Couldn’t install the new Roblox version.") : installed.error);
+    return fail(installed.error.empty() ? std::wstring(T(L"Couldn’t install the new Roblox version.")) : installed.error);
   }
   steps.discard(download.directory);
   outcome.result = Result::kInstalled;
@@ -293,7 +294,7 @@ AppDataSnapshot SnapshotAppData(const std::wstring& data_dir, const std::wstring
   const std::wstring final_path = JoinPath(backups_dir, name);
   const std::wstring partial = final_path + L".partial";
   if (PathIsDirectory(final_path)) {
-    snapshot.error = L"A backup with this name already exists. Try again in a moment.";
+    snapshot.error = T(L"A backup with this name already exists. Try again in a moment.");
     return snapshot;
   }
   DeleteDirectoryTree(partial);
@@ -302,9 +303,9 @@ AppDataSnapshot SnapshotAppData(const std::wstring& data_dir, const std::wstring
   const DWORD source = GetFileAttributesW(Long(data_dir).c_str());
   if (source == INVALID_FILE_ATTRIBUTES) {
     copied = CreateDirectoryW(Long(partial).c_str(), nullptr) != FALSE;
-    if (!copied) snapshot.error = WithErrorCause(L"A folder couldn’t be created.", GetLastError());
+    if (!copied) snapshot.error = WithErrorCause(T(L"A folder couldn’t be created."), GetLastError());
   } else if (!(source & FILE_ATTRIBUTE_DIRECTORY) || (source & FILE_ATTRIBUTE_REPARSE_POINT)) {
-    snapshot.error = L"Your Roblox data isn’t in a normal folder, so it wasn’t copied.";
+    snapshot.error = T(L"Your Roblox data isn’t in a normal folder, so it wasn’t copied.");
     copied = false;
   } else {
     copied = CopyTree(data_dir, partial, &stats, &snapshot.error);
@@ -337,12 +338,12 @@ AppDataSnapshot RestoreAppData(const std::wstring& snapshot, const std::wstring&
                                const std::wstring& backups_dir, std::wstring* error) {
   AppDataSnapshot before;
   if (!PathIsFile(JoinPath(snapshot, L"snapshot.json"))) {
-    *error = L"That copy of your Roblox data is incomplete.";
+    *error = T(L"That copy of your Roblox data is incomplete.");
     return before;
   }
   before = SnapshotAppData(data_dir, backups_dir, UtcFileStamp() + L"-before-restore", 0);
   if (!before.ok) {
-    *error = L"Your current Roblox data couldn’t be backed up first. " + before.error;
+    *error = TF(L"Your current Roblox data couldn’t be backed up first. {0}", before.error);
     return before;
   }
   const std::wstring restoring = data_dir + L".restoring";

@@ -30,6 +30,12 @@ LauncherPaths InstancePaths(const LauncherPaths& paths, int instance);
 bool PrepareInstance(const LauncherConfig& config, const LauncherPaths& paths, int instance, std::wstring* error,
                      const InstanceAccount& account = {});
 
+std::wstring SignedInAccountId(const std::wstring& data_root);
+bool HasSavedSignIn(const std::wstring& data_root);
+
+bool PrepareMainAccount(const LauncherPaths& paths, const InstanceAccount& account, const std::wstring& account_id,
+                        std::wstring* error);
+
 bool IsInstanceCopySkipped(const std::wstring& name);
 
 bool DataFolderInUse(const std::wstring& data_root);

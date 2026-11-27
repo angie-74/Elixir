@@ -8,6 +8,7 @@
 #include "core/mods.h"
 #include "core/shortcuts.h"
 #include "core/util.h"
+#include "core/i18n.h"
 #include "ui/app.h"
 #include "ui/theme.h"
 
@@ -31,27 +32,27 @@ constexpr const wchar_t* kMocktailAuthors[] = {
 };
 
 constexpr Credit kDesignCredits[] = {
-    {L"Bloxstrap", L"Where it started: Fast Flags, mods, BloxstrapRPC", L"https://github.com/bloxstraplabs/bloxstrap"},
-    {L"Fishstrap", L"A fork of Bloxstrap. Elixir’s launcher follows it", L"https://github.com/fishstrap/fishstrap"},
-    {L"WPF UI", L"The look of the sliders", L"https://github.com/lepoco/wpfui"},
-    {L"Lucide", L"Icons", L"https://github.com/lucide-icons/lucide"},
-    {L"discord-rpc-csharp", L"How Rich Presence talks to Discord", L"https://github.com/Lachee/discord-rpc-csharp"},
+    {L"Bloxstrap", ELIXIR_TR(L"Where it started: Fast Flags, mods, BloxstrapRPC"), L"https://github.com/bloxstraplabs/bloxstrap"},
+    {L"Fishstrap", ELIXIR_TR(L"A fork of Bloxstrap. Elixir’s launcher follows it"), L"https://github.com/fishstrap/fishstrap"},
+    {L"WPF UI", ELIXIR_TR(L"The look of the sliders"), L"https://github.com/lepoco/wpfui"},
+    {L"Lucide", ELIXIR_TR(L"Icons"), L"https://github.com/lucide-icons/lucide"},
+    {L"discord-rpc-csharp", ELIXIR_TR(L"How Rich Presence talks to Discord"), L"https://github.com/Lachee/discord-rpc-csharp"},
 };
 
 constexpr Credit kThanksCredits[] = {
-    {L"Mocktail", L"The Linux runtime Elixir is built on", L"https://github.com/komaruworld/mocktail"},
-    {L"mcpelauncher-linker", L"The Android library loader (ChristopherHX, MCMrARM)", L""},
-    {L"Android Open Source Project", L"bionic, the Android C library", L""},
-    {L"Android Compatibility Layer", L"Reference (Reveny)", L"https://github.com/reveny/Android-Compatibility-Layer"},
-    {L"libhybris", L"Reference", L"https://github.com/libhybris/libhybris"},
-    {L"Cordial", L"Published findings on the same client", L"https://github.com/luohoa97/cordial"},
-    {L"utf8proc", L"Unicode tables", L"https://github.com/JuliaStrings/utf8proc"},
+    {L"Mocktail", ELIXIR_TR(L"The Linux runtime Elixir is built on"), L"https://github.com/komaruworld/mocktail"},
+    {L"mcpelauncher-linker", ELIXIR_TR(L"The Android library loader (ChristopherHX, MCMrARM)"), L""},
+    {L"Android Open Source Project", ELIXIR_TR(L"bionic, the Android C library"), L""},
+    {L"Android Compatibility Layer", ELIXIR_TR(L"Reference (Reveny)"), L"https://github.com/reveny/Android-Compatibility-Layer"},
+    {L"libhybris", ELIXIR_TR(L"Reference"), L"https://github.com/libhybris/libhybris"},
+    {L"Cordial", ELIXIR_TR(L"Published findings on the same client"), L"https://github.com/luohoa97/cordial"},
+    {L"utf8proc", ELIXIR_TR(L"Unicode tables"), L"https://github.com/JuliaStrings/utf8proc"},
 };
 
 }
 
 float App::BuildMods(Ui& ui, float x, float y, float width) {
-  y = PageHeader(ui, x, y, width, L"Mods", L"Replace Roblox’s textures, sounds and fonts with your own.");
+  y = PageHeader(ui, x, y, width, T(L"Mods"), T(L"Replace Roblox’s textures, sounds and fonts with your own."));
   const float cx = x + theme::kCardPadding;
   const float cw = width - 2.0f * theme::kCardPadding;
   D2D1_RECT_F control{};
@@ -60,40 +61,40 @@ float App::BuildMods(Ui& ui, float x, float y, float width) {
   BeginOptions();
   float cy = y;
   {
-    const float help_width = ui.ButtonWidth(L"Help", glyph::kOpenExternal);
-    const float open_width = ui.ButtonWidth(L"Open folder", glyph::kFolder);
-    cy = SettingRow(ui, cx, cy, cw, L"Mods folder", L"Files here replace Roblox’s files with the same path.",
+    const float help_width = ui.ButtonWidth(T(L"Help"), glyph::kOpenExternal);
+    const float open_width = ui.ButtonWidth(T(L"Open folder"), glyph::kFolder);
+    cy = SettingRow(ui, cx, cy, cw, T(L"Mods folder"), T(L"Files here replace Roblox’s files with the same path."),
                     help_width + 8.0f + open_width, theme::kButtonHeight, &control, true);
     if (ui.Button(L"mods.help", D2D1::RectF(control.left, control.top, control.left + help_width, control.bottom),
-                  L"Help", ButtonStyle::kStandard, true, glyph::kOpenExternal,
-                  L"Opens Bloxstrap’s guide to mods in your browser")) {
+                  T(L"Help"), ButtonStyle::kStandard, true, glyph::kOpenExternal,
+                  T(L"Opens Bloxstrap’s guide to mods in your browser"))) {
       Defer([this] { OpenPath(kModsHelpUrl); });
     }
     if (ui.Button(L"mods.open", D2D1::RectF(control.right - open_width, control.top, control.right, control.bottom),
-                  L"Open folder", ButtonStyle::kStandard, true, glyph::kFolder, L"Opens your Mods folder")) {
+                  T(L"Open folder"), ButtonStyle::kStandard, true, glyph::kFolder, T(L"Opens your Mods folder"))) {
       Defer([this] {
         OpenFolder(ModsDirectory(paths_));
         RefreshMods();
       });
     }
   }
-  cy = SettingRow(ui, cx, cy, cw, L"Use mods", L"", 96.0f, 32.0f, &control, false);
-  if (ui.Toggle(L"mods.enabled", control, &config_.mods.enabled, L"Use mods")) SaveConfig();
+  cy = SettingRow(ui, cx, cy, cw, T(L"Use mods"), L"", ui.ToggleWidth(), 32.0f, &control, false);
+  if (ui.Toggle(L"mods.enabled", control, &config_.mods.enabled, T(L"Use mods"))) SaveConfig();
   {
-    const float choose_width = ui.ButtonWidth(L"Choose font…", glyph::kOpenFile);
-    const float remove_width = ui.ButtonWidth(L"Remove", glyph::kDelete);
-    cy = SettingRow(ui, cx, cy, cw, L"Custom font",
-                    summary.custom_font ? L"Roblox uses your font." : L"One font for all of Roblox’s text.",
+    const float choose_width = ui.ButtonWidth(T(L"Choose font…"), glyph::kOpenFile);
+    const float remove_width = ui.ButtonWidth(T(L"Remove"), glyph::kDelete);
+    cy = SettingRow(ui, cx, cy, cw, T(L"Custom font"),
+                    summary.custom_font ? T(L"Roblox uses your font.") : T(L"One font for all of Roblox’s text."),
                     choose_width + 8.0f + remove_width, theme::kButtonHeight, &control, false);
     const bool idle = !mods_.working;
     if (ui.Button(L"mods.font.choose",
-                  D2D1::RectF(control.left, control.top, control.left + choose_width, control.bottom), L"Choose font…",
+                  D2D1::RectF(control.left, control.top, control.left + choose_width, control.bottom), T(L"Choose font…"),
                   ButtonStyle::kStandard, idle, glyph::kOpenFile)) {
       Defer([this] { ChooseCustomFont(); });
     }
     if (ui.Button(L"mods.font.remove",
-                  D2D1::RectF(control.right - remove_width, control.top, control.right, control.bottom), L"Remove",
-                  ButtonStyle::kStandard, idle && summary.custom_font, glyph::kDelete, L"Remove the custom font")) {
+                  D2D1::RectF(control.right - remove_width, control.top, control.right, control.bottom), T(L"Remove"),
+                  ButtonStyle::kStandard, idle && summary.custom_font, glyph::kDelete, T(L"Remove the custom font"))) {
       Defer([this] { RemoveCustomFontMod(); });
     }
   }
@@ -101,28 +102,30 @@ float App::BuildMods(Ui& ui, float x, float y, float width) {
 
   if (mods_.scanned) {
     if (summary.used_files == 0 && summary.unused_files == 0) {
-      y = Banner(ui, x, y, width, 4, L"No mods yet", L"") + 12.0f;
+      y = Banner(ui, x, y, width, 4, T(L"No mods yet"), L"") + 12.0f;
     }
     if (summary.used_files != 0) {
-      const std::wstring title = std::to_wstring(summary.used_files) +
-                                 (summary.used_files == 1 ? L" file replaces Roblox’s" : L" files replace Roblox’s");
-      y = Banner(ui, x, y, width, config_.mods.enabled ? 0 : 4, title, config_.mods.enabled ? L"" : L"Mods are off.") +
+      const std::wstring title =
+          TN(summary.used_files, L"{0} file replaces Roblox’s", L"{0} files replace Roblox’s");
+      y = Banner(ui, x, y, width, config_.mods.enabled ? 0 : 4, title,
+                 config_.mods.enabled ? T(L"") : T(L"Mods are off.")) +
           12.0f;
     }
     if (summary.unused_files != 0) {
-      std::wstring body = L"Only textures, sounds, fonts and sky images are replaced. Not used: ";
+      std::wstring examples;
       for (std::size_t i = 0; i < summary.unused_examples.size(); ++i) {
-        if (i != 0) body += L", ";
-        body += summary.unused_examples[i];
+        if (i != 0) examples += L", ";
+        examples += summary.unused_examples[i];
       }
-      if (summary.unused_files > summary.unused_examples.size()) body += L" and others";
-      body += L".";
-      const std::wstring title = std::to_wstring(summary.unused_files) +
-                                 (summary.unused_files == 1 ? L" file isn’t used" : L" files aren’t used");
+      const std::wstring body =
+          summary.unused_files > summary.unused_examples.size()
+              ? TF(L"Only textures, sounds, fonts and sky images are replaced. Not used: {0} and others.", examples)
+              : TF(L"Only textures, sounds, fonts and sky images are replaced. Not used: {0}.", examples);
+      const std::wstring title = TN(summary.unused_files, L"{0} file isn’t used", L"{0} files aren’t used");
       y = Banner(ui, x, y, width, 1, title, body) + 12.0f;
     }
     if (summary.truncated) {
-      y = Banner(ui, x, y, width, 1, L"The Mods folder has too many files to count", L"") + 12.0f;
+      y = Banner(ui, x, y, width, 1, T(L"The Mods folder has too many files to count"), L"") + 12.0f;
     }
   }
   if (!mods_.message.empty()) y = Banner(ui, x, y, width, mods_.message_status, mods_.message, L"") + 12.0f;
@@ -130,7 +133,7 @@ float App::BuildMods(Ui& ui, float x, float y, float width) {
 }
 
 float App::BuildShortcuts(Ui& ui, float x, float y, float width) {
-  y = PageHeader(ui, x, y, width, L"Shortcuts", L"");
+  y = PageHeader(ui, x, y, width, T(L"Shortcuts"), L"");
   const float cx = x + theme::kCardPadding;
   const float cw = width - 2.0f * theme::kCardPadding;
   D2D1_RECT_F control{};
@@ -138,35 +141,35 @@ float App::BuildShortcuts(Ui& ui, float x, float y, float width) {
   y = SectionTitle(ui, x, y, width, L"Elixir");
   BeginOptions();
   float cy = y;
-  cy = SettingRow(ui, cx, cy, cw, L"Desktop shortcut", L"", 96.0f, 32.0f, &control, true);
+  cy = SettingRow(ui, cx, cy, cw, T(L"Desktop shortcut"), L"", ui.ToggleWidth(), 32.0f, &control, true);
   bool desktop = shortcuts_.desktop;
-  if (ui.Toggle(L"shortcuts.desktop", control, &desktop, L"Desktop shortcut", shortcuts_.loaded)) {
+  if (ui.Toggle(L"shortcuts.desktop", control, &desktop, T(L"Desktop shortcut"), shortcuts_.loaded)) {
     Defer([this, desktop] { SetElixirShortcut(true, desktop); });
   }
-  cy = SettingRow(ui, cx, cy, cw, L"Start menu shortcut", L"", 96.0f, 32.0f, &control, false);
+  cy = SettingRow(ui, cx, cy, cw, T(L"Start menu shortcut"), L"", ui.ToggleWidth(), 32.0f, &control, false);
   bool start_menu = shortcuts_.start_menu;
-  if (ui.Toggle(L"shortcuts.start", control, &start_menu, L"Start menu shortcut", shortcuts_.loaded)) {
+  if (ui.Toggle(L"shortcuts.start", control, &start_menu, T(L"Start menu shortcut"), shortcuts_.loaded)) {
     Defer([this, start_menu] { SetElixirShortcut(false, start_menu); });
   }
   y = EndOptions(cy) + 24.0f;
 
-  y = SectionTitle(ui, x, y, width, L"Game shortcuts");
+  y = SectionTitle(ui, x, y, width, T(L"Game shortcuts"));
   const int card = ui.BeginCard(x, y, width);
   cy = y + 18.0f;
   {
-    const float add_width = ui.ButtonWidth(L"Add", glyph::kAdd);
+    const float add_width = ui.ButtonWidth(T(L"Add"), glyph::kAdd);
     ui.TextField(L"shortcuts.game.link", D2D1::RectF(cx, cy, cx + cw - add_width - 8.0f, cy + 32.0f),
-                 &shortcuts_.game_link, L"Game link or place ID", L"Game link or place ID");
+                 &shortcuts_.game_link, T(L"Game link or place ID"), T(L"Game link or place ID"));
     const bool valid = !shortcuts_.working && ParsePlaceId(shortcuts_.game_link, nullptr);
-    if (ui.Button(L"shortcuts.game.add", D2D1::RectF(cx + cw - add_width, cy, cx + cw, cy + 32.0f), L"Add",
-                  ButtonStyle::kStandard, valid, glyph::kAdd, L"Puts a shortcut to this game on your desktop")) {
+    if (ui.Button(L"shortcuts.game.add", D2D1::RectF(cx + cw - add_width, cy, cx + cw, cy + 32.0f), T(L"Add"),
+                  ButtonStyle::kStandard, valid, glyph::kAdd, T(L"Puts a shortcut to this game on your desktop"))) {
       Defer([this] { CreateGameShortcut(); });
     }
     cy += 32.0f + 8.0f;
-    static constexpr wchar_t kHint[] =
-        L"The shortcut takes the game’s name and icon, and follows them when they change. Type a name to keep your own.";
-    const float hint_height = ui.Text(cx, cy, cw, kHint, TextStyle::kCaption, theme::kTextTertiary);
-    ui.Label(D2D1::RectF(cx, cy, cx + cw, cy + hint_height), kHint);
+    const std::wstring& hint = T(
+        L"The shortcut takes the game’s name and icon, and follows them when they change. Type a name to keep your own.");
+    const float hint_height = ui.Text(cx, cy, cw, hint, TextStyle::kCaption, theme::kTextTertiary);
+    ui.Label(D2D1::RectF(cx, cy, cx + cw, cy + hint_height), hint);
     cy += hint_height;
   }
 
@@ -185,7 +188,7 @@ float App::BuildShortcuts(Ui& ui, float x, float y, float width) {
   }
   if (!lines.empty()) cy += 12.0f;
   constexpr float kRowHeight = 48.0f;
-  const float remove_width = ui.ButtonWidth(L"Remove", glyph::kDelete);
+  const float remove_width = ui.ButtonWidth(T(L"Remove"), glyph::kDelete);
   std::vector<std::uint32_t> ended;
   for (const Line& line : lines) {
     float shown = 1.0f;
@@ -229,8 +232,8 @@ float App::BuildShortcuts(Ui& ui, float x, float y, float width) {
     ui.Label(D2D1::RectF(cx, cy, field.right, cy + kRowHeight),
              game.title.empty() || game.title == game.name ? game.name : game.name + L", " + game.title);
     std::wstring name = game.name;
-    if (ui.TextField(L"shortcuts.game.name#" + index, field, &name, game.title.empty() ? L"Name" : game.title,
-                     L"Name of the shortcut " + game.name, !shortcuts_.working)) {
+    if (ui.TextField(L"shortcuts.game.name#" + index, field, &name, game.title.empty() ? T(L"Name") : game.title,
+                     TF(L"Name of the shortcut {0}", game.name), !shortcuts_.working)) {
       name = TrimWide(name);
       if (name != game.name) {
         const std::wstring path = game.path;
@@ -238,8 +241,9 @@ float App::BuildShortcuts(Ui& ui, float x, float y, float width) {
       }
     }
     if (ui.Button(L"shortcuts.game.remove#" + index,
-                  D2D1::RectF(cx + cw - remove_width, cy + 7.0f, cx + cw, cy + 7.0f + theme::kButtonHeight), L"Remove",
-                  ButtonStyle::kSubtle, !shortcuts_.working, glyph::kDelete, L"Remove the shortcut " + game.name)) {
+                  D2D1::RectF(cx + cw - remove_width, cy + 7.0f, cx + cw, cy + 7.0f + theme::kButtonHeight), T(L"Remove"),
+                  ButtonStyle::kSubtle, !shortcuts_.working, glyph::kDelete,
+                  TF(L"Remove the shortcut {0}", game.name))) {
       const std::wstring path = game.path;
       Defer([this, path] { RemoveGameShortcut(path); });
     }
@@ -256,7 +260,7 @@ float App::BuildShortcuts(Ui& ui, float x, float y, float width) {
 }
 
 float App::BuildAbout(Ui& ui, float x, float y, float width) {
-  y = PageHeader(ui, x, y, width, L"About", L"");
+  y = PageHeader(ui, x, y, width, T(L"About"), L"");
 
   const float hero_height = 168.0f;
   ui.FillGradient(D2D1::RectF(x, y, x + width, y + hero_height), theme::kHeroTop, theme::kHeroBottom, 10.0f);
@@ -264,26 +268,26 @@ float App::BuildAbout(Ui& ui, float x, float y, float width) {
   const float logo_height = 64.0f;
   const float logo_width = std::round(logo_height * 886.0f / 320.0f);
   ui.Logo(D2D1::RectF(x + 28.0f, y + 22.0f, x + 28.0f + logo_width, y + 22.0f + logo_height));
-  ui.Text(x + 32.0f, y + 98.0f, width - 64.0f, std::wstring(L"Version ") + kVersion + L" · Apache License 2.0",
+  ui.Text(x + 32.0f, y + 98.0f, width - 64.0f, TF(L"Version {0}", kVersion) + L" · Apache License 2.0",
           TextStyle::kSecondary, theme::kTextSecondary);
   ui.Text(x + 32.0f, y + 122.0f, width - 64.0f,
-          L"Elixir lets users experience the Android version of Roblox on their Windows desktops.",
+          T(L"Elixir lets users experience the Android version of Roblox on their Windows desktops."),
           TextStyle::kSecondary, theme::kTextSecondary);
-  ui.Label(D2D1::RectF(x, y, x + width, y + hero_height), std::wstring(L"Elixir version ") + kVersion + L".");
+  ui.Label(D2D1::RectF(x, y, x + width, y + hero_height), TF(L"Elixir version {0}.", kVersion));
   y += hero_height + 16.0f;
 
   {
     struct LinkButton {
       const wchar_t* id;
-      const wchar_t* label;
+      std::wstring label;
       wchar_t glyph;
       const wchar_t* url;
     };
     const LinkButton links[] = {
-        {L"about.help", L"Elixir on GitHub", glyph::kOpenExternal, L"https://github.com/angie-74/Elixir"},
-        {L"about.mocktail", L"Mocktail on GitHub", glyph::kOpenExternal, L"https://github.com/komaruworld/mocktail"},
-        {L"about.fishstrap", L"Fishstrap on GitHub", glyph::kOpenExternal, L"https://github.com/fishstrap/fishstrap"},
-        {L"about.bloxstrap", L"Bloxstrap on GitHub", glyph::kOpenExternal,
+        {L"about.help", T(L"Elixir on GitHub"), glyph::kOpenExternal, L"https://github.com/angie-74/Elixir"},
+        {L"about.mocktail", T(L"Mocktail on GitHub"), glyph::kOpenExternal, L"https://github.com/komaruworld/mocktail"},
+        {L"about.fishstrap", T(L"Fishstrap on GitHub"), glyph::kOpenExternal, L"https://github.com/fishstrap/fishstrap"},
+        {L"about.bloxstrap", T(L"Bloxstrap on GitHub"), glyph::kOpenExternal,
          L"https://github.com/bloxstraplabs/bloxstrap"},
     };
     float bx = x;
@@ -304,21 +308,21 @@ float App::BuildAbout(Ui& ui, float x, float y, float width) {
     y = by + theme::kButtonHeight + 20.0f;
   }
 
-  const std::vector<std::wstring> tabs = {L"Credits", L"Licenses"};
+  const std::vector<std::wstring> tabs = {T(L"Credits"), T(L"Licenses")};
   about_tab_ = std::clamp(about_tab_, 0, 1);
-  ui.Tabs(L"about.tab", x, y, tabs, &about_tab_, L"About section");
+  ui.Tabs(L"about.tab", x, y, tabs, &about_tab_, T(L"About section"));
   y += 32.0f + 16.0f;
   return about_tab_ == 0 ? BuildAboutCredits(ui, x, y, width) : BuildAboutLicenses(ui, x, y, width);
 }
 
 float App::BuildAboutCredits(Ui& ui, float x, float y, float width) {
-  y += ui.Text(x, y, width, L"Contributors", TextStyle::kCardTitle, theme::kText) + 12.0f;
+  y += ui.Text(x, y, width, T(L"Contributors"), TextStyle::kCardTitle, theme::kText) + 12.0f;
 
   const bool columns = width >= 720.0f;
   const float gap = 12.0f;
   const float column_width = columns ? std::floor((width - 2.0f * gap) / 3.0f) : width;
   float bottom = y;
-  const auto column = [&](int index, const wchar_t* title, wchar_t glyph, const auto& fill) {
+  const auto column = [&](int index, const std::wstring& title, wchar_t glyph, const auto& fill) {
     const float left = columns ? x + static_cast<float>(index) * (column_width + gap) : x;
     const float top = columns ? y : bottom + (index == 0 ? 0.0f : gap);
     const int card = ui.BeginCard(left, top, column_width);
@@ -345,27 +349,27 @@ float App::BuildAboutCredits(Ui& ui, float x, float y, float width) {
           cy += ui.Text(cx, cy, cw, credit.name, TextStyle::kBody, theme::kText);
         }
         if (credit.note[0] != L'\0') {
-          cy += ui.Text(cx, cy, cw, credit.note, TextStyle::kCaption, theme::kTextTertiary);
+          cy += ui.Text(cx, cy, cw, T(credit.note), TextStyle::kCaption, theme::kTextTertiary);
         }
         cy += 8.0f;
       }
       return cy;
     };
   };
-  column(0, L"Code", glyph::kDocument, [&ui](float cx, float cy, float cw) {
+  column(0, T(L"Code"), glyph::kDocument, [&ui](float cx, float cy, float cw) {
     cy += ui.Text(cx, cy, cw, L"Elixir Project Authors", TextStyle::kBody, theme::kText) + 10.0f;
-    cy += ui.Text(cx, cy, cw, L"Mocktail contributors", TextStyle::kCaption, theme::kTextTertiary) + 4.0f;
+    cy += ui.Text(cx, cy, cw, T(L"Mocktail contributors"), TextStyle::kCaption, theme::kTextTertiary) + 4.0f;
     std::wstring names;
     for (const wchar_t* author : kMocktailAuthors) {
       if (!names.empty()) names += L", ";
       names += author;
     }
     cy += ui.Text(cx, cy, cw, names, TextStyle::kBody, theme::kTextSecondary);
-    ui.Label(D2D1::RectF(cx, cy - 20.0f, cx + cw, cy), L"Mocktail contributors: " + names);
+    ui.Label(D2D1::RectF(cx, cy - 20.0f, cx + cw, cy), TF(L"Mocktail contributors: {0}", names));
     return cy + 8.0f;
   });
-  column(1, L"Design and features", glyph::kEdit, credits(kDesignCredits, std::size(kDesignCredits), L"about.design#"));
-  column(2, L"Special thanks", glyph::kCheck, credits(kThanksCredits, std::size(kThanksCredits), L"about.thanks#"));
+  column(1, T(L"Design and features"), glyph::kEdit, credits(kDesignCredits, std::size(kDesignCredits), L"about.design#"));
+  column(2, T(L"Special thanks"), glyph::kCheck, credits(kThanksCredits, std::size(kThanksCredits), L"about.thanks#"));
   return bottom;
 }
 
@@ -377,7 +381,7 @@ float App::BuildAboutLicenses(Ui& ui, float x, float y, float width) {
   int card = ui.BeginCard(x, y, width);
   float cy = y + 18.0f;
   cy += ui.Text(cx, cy, cw, L"Elixir", TextStyle::kCardTitle, theme::kText) + 8.0f;
-  cy += ui.Text(cx, cy, cw, L"Apache License 2.0. Third-party components keep their own licenses.", TextStyle::kBody,
+  cy += ui.Text(cx, cy, cw, T(L"Apache License 2.0. Third-party components keep their own licenses."), TextStyle::kBody,
                 theme::kTextSecondary);
   bool open = true;
   const auto close = [&] {

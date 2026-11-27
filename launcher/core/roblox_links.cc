@@ -12,6 +12,7 @@
 
 #include "core/json.h"
 #include "core/util.h"
+#include "core/i18n.h"
 
 namespace elixir::launcher {
 namespace {
@@ -21,9 +22,9 @@ constexpr std::size_t kMaxValuesPerKey = 512;
 constexpr DWORD kMaxValueBytes = 64 * 1024;
 constexpr DWORD kMaxNameChars = 16384;
 
-constexpr wchar_t kNotBackedUp[] = L"Elixir couldn’t save the current Roblox link settings, so nothing was changed.";
+constexpr wchar_t kNotBackedUp[] = ELIXIR_TR(L"Elixir couldn’t save the current Roblox link settings, so nothing was changed.");
 constexpr wchar_t kNotRestored[] =
-    L"The app that opened Roblox links before couldn’t be set back. Reinstall it to fix this.";
+    ELIXIR_TR(L"The app that opened Roblox links before couldn’t be set back. Reinstall it to fix this.");
 
 std::wstring SchemePath(const LinkRegistry& registry, const wchar_t* scheme) {
   return registry.classes + L"\\" + scheme;
@@ -93,14 +94,14 @@ bool Unhex(const std::string& hex, std::vector<BYTE>* out) {
 
 bool SnapshotKey(HKEY key, int depth, Json* out, std::wstring* error) {
   if (depth > kMaxDepth) {
-    *error = kNotBackedUp;
+    *error = T(kNotBackedUp);
     return false;
   }
   *out = Json::MakeObject();
   Json values = Json::MakeArray();
   for (DWORD index = 0;; ++index) {
     if (index >= kMaxValuesPerKey) {
-      *error = kNotBackedUp;
+      *error = T(kNotBackedUp);
       return false;
     }
     std::wstring name(kMaxNameChars, L'\0');
@@ -110,7 +111,7 @@ bool SnapshotKey(HKEY key, int depth, Json* out, std::wstring* error) {
     LSTATUS status = RegEnumValueW(key, index, name.data(), &name_chars, nullptr, &type, nullptr, &bytes);
     if (status == ERROR_NO_MORE_ITEMS) break;
     if (status != ERROR_SUCCESS || bytes > kMaxValueBytes) {
-      *error = kNotBackedUp;
+      *error = T(kNotBackedUp);
       return false;
     }
     name.resize(name_chars);
@@ -120,7 +121,7 @@ bool SnapshotKey(HKEY key, int depth, Json* out, std::wstring* error) {
     status = RegEnumValueW(key, index, again.data(), &name_chars, nullptr, &type, data.empty() ? nullptr : data.data(),
                            &bytes);
     if (status != ERROR_SUCCESS) {
-      *error = kNotBackedUp;
+      *error = T(kNotBackedUp);
       return false;
     }
     data.resize(bytes);
@@ -138,13 +139,13 @@ bool SnapshotKey(HKEY key, int depth, Json* out, std::wstring* error) {
     const LSTATUS status = RegEnumKeyExW(key, index, name.data(), &name_chars, nullptr, nullptr, nullptr, nullptr);
     if (status == ERROR_NO_MORE_ITEMS) break;
     if (status != ERROR_SUCCESS) {
-      *error = kNotBackedUp;
+      *error = T(kNotBackedUp);
       return false;
     }
     name.resize(name_chars);
     Key child;
     if (RegOpenKeyExW(key, name.c_str(), 0, KEY_READ, child.out()) != ERROR_SUCCESS) {
-      *error = kNotBackedUp;
+      *error = T(kNotBackedUp);
       return false;
     }
     Json snapshot;
@@ -157,27 +158,27 @@ bool SnapshotKey(HKEY key, int depth, Json* out, std::wstring* error) {
 
 bool RestoreKey(HKEY parent, const std::wstring& name, const Json& snapshot, int depth, std::wstring* error) {
   if (depth > kMaxDepth || !snapshot.is_object()) {
-    *error = kNotRestored;
+    *error = T(kNotRestored);
     return false;
   }
   Key key;
   if (RegCreateKeyExW(parent, name.c_str(), 0, nullptr, 0, KEY_ALL_ACCESS, nullptr, key.out(), nullptr) !=
       ERROR_SUCCESS) {
-    *error = kNotRestored;
+    *error = T(kNotRestored);
     return false;
   }
   if (const Json* values = snapshot.Find("values"); values != nullptr && values->is_array()) {
     for (const Json& value : values->items()) {
       std::vector<BYTE> data;
       if (!Unhex(value.GetString("data"), &data)) {
-        *error = kNotRestored;
+        *error = T(kNotRestored);
         return false;
       }
       const std::wstring value_name = Utf8ToWide(value.GetString("name"));
       const DWORD type = static_cast<DWORD>(value.GetInt("type", REG_SZ));
       if (RegSetValueExW(key.get(), value_name.empty() ? nullptr : value_name.c_str(), 0, type,
                          data.empty() ? nullptr : data.data(), static_cast<DWORD>(data.size())) != ERROR_SUCCESS) {
-        *error = kNotRestored;
+        *error = T(kNotRestored);
         return false;
       }
     }
@@ -372,11 +373,11 @@ std::wstring LinkRegistrationBlocker() {
     const bool elevated = GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &size) &&
                           elevation.TokenIsElevated != 0;
     CloseHandle(token);
-    if (elevated) return L"Elixir is running as administrator. Start it normally to change this.";
+    if (elevated) return T(L"Elixir is running as administrator. Start it normally to change this.");
   }
   UINT32 length = 0;
   if (GetCurrentPackageFullName(&length, nullptr) != APPMODEL_ERROR_NO_PACKAGE) {
-    return L"Start Elixir from its own shortcut to change this.";
+    return T(L"Start Elixir from its own shortcut to change this.");
   }
   return {};
 }
@@ -397,7 +398,7 @@ bool RegisterLinkHandlers(const LinkRegistry& registry, const std::wstring& exe,
     if (opened == ERROR_FILE_NOT_FOUND) {
       entry.Set("absent", true);
     } else if (opened != ERROR_SUCCESS) {
-      message = L"The current Roblox link settings couldn’t be read, so nothing was changed.";
+      message = T(L"The current Roblox link settings couldn’t be read, so nothing was changed.");
       return false;
     } else if (HandlerFor(registry, scheme, exe) == LinkHandler::kElixir) {
       if (schemes.Find(name) != nullptr) continue;
@@ -415,7 +416,7 @@ bool RegisterLinkHandlers(const LinkRegistry& registry, const std::wstring& exe,
     std::wstring write_error;
     if (!EnsureDirectory(ParentDirectory(backup_file), &write_error) ||
         !AtomicWriteFile(backup_file, backup.Dump(), AtomicWriteBackup::kNone, &write_error)) {
-      message = kNotBackedUp;
+      message = T(kNotBackedUp);
       return false;
     }
   }
@@ -424,12 +425,12 @@ bool RegisterLinkHandlers(const LinkRegistry& registry, const std::wstring& exe,
   for (const wchar_t* scheme : kLinkSchemes) {
     DeleteScheme(registry, scheme);
     if (!WriteScheme(registry, scheme, icon, command)) {
-      message = L"Windows didn’t accept the change.";
+      message = T(L"Windows didn’t accept the change.");
       return false;
     }
   }
   if (!WriteDefaultAppListing(registry, icon, command)) {
-    message = L"Windows didn’t accept the change.";
+    message = T(L"Windows didn’t accept the change.");
     return false;
   }
   Notify();
@@ -461,7 +462,7 @@ bool UnregisterLinkHandlers(const LinkRegistry& registry, const std::wstring& ex
   RemoveDefaultAppListing(registry, exe);
   if (ok) DeleteFileW(backup_file.c_str());
   Notify();
-  if (!ok && message.empty()) message = L"Windows didn’t accept the change.";
+  if (!ok && message.empty()) message = T(L"Windows didn’t accept the change.");
   return ok;
 }
 

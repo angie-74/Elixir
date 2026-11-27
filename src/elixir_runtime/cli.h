@@ -57,6 +57,7 @@ struct LaunchOptions {
   std::string present_mode;
   int frame_rate_cap = 0;
   std::optional<double> resolution_scale;
+  std::optional<double> stretch;
   std::optional<bool> controller;
   std::string audio_device;
   std::string audio_input_device;

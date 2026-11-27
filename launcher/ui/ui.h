@@ -131,13 +131,14 @@ class Ui {
   float Text(float x, float y, float width, std::wstring_view text, TextStyle style, const D2D1_COLOR_F& color,
              Align align = Align::kLeading);
   void TextLine(const D2D1_RECT_F& rect, std::wstring_view text, TextStyle style, const D2D1_COLOR_F& color,
-                Align align = Align::kLeading);
+                Align align = Align::kLeading, float min_scale = 1.0f);
   float TextWidth(std::wstring_view text, TextStyle style);
   float TextHeight(std::wstring_view text, TextStyle style, float width);
+  float ToggleWidth();
   void Glyph(float center_x, float center_y, wchar_t glyph, TextStyle style, const D2D1_COLOR_F& color);
   void Logo(const D2D1_RECT_F& rect);
   void AppIcon(const D2D1_RECT_F& rect);
-  void Image(const D2D1_RECT_F& rect, std::wstring_view path);
+  float Image(const D2D1_RECT_F& rect, std::wstring_view path, bool fade_in = false);
   void Progress(const D2D1_RECT_F& rect, float fraction);
   bool animating() const { return animating_; }
 
@@ -152,7 +153,7 @@ class Ui {
               std::wstring_view description = {});
   float ButtonWidth(std::wstring_view label, wchar_t glyph = 0, bool large = false);
   bool Nav(std::wstring_view id, const D2D1_RECT_F& rect, std::wstring_view label, bool selected,
-           std::wstring_view shortcut);
+           std::wstring_view shortcut, bool draw_selection = true);
   bool Toggle(std::wstring_view id, const D2D1_RECT_F& rect, bool* value, std::wstring_view name, bool enabled = true);
   bool ComboBox(std::wstring_view id, const D2D1_RECT_F& rect, std::wstring_view name, std::wstring_view value,
                 bool expanded, bool enabled);

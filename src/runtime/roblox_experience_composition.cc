@@ -1381,10 +1381,10 @@ Status RobloxExperienceComposition::DrainLaunchRequests() {
       presence_request_.reset();
       playing_presence_published_ = false;
       controlled_switch_waiting_for_return_ = false;
-      game_was_scaled = elixir::RendersSmaller(game_render_scale_);
+      game_was_scaled = game_render_scale_.smaller();
       restore_app_surface =
           game_was_scaled && !lua_app_surface_recreation_pending_;
-      game_render_scale_ = 1.0f;
+      game_render_scale_ = {};
       app_surface = readiness_.surface;
     }
     NotifyPresence(RobloxExperiencePresencePhase::kBrowsing, nullptr);
@@ -1626,7 +1626,7 @@ GameSessionUpdateResult RobloxExperienceComposition::SurfaceChanged(
   std::shared_ptr<RobloxFreshGameLaunchController> controller;
   bool forward = false;
   bool recreate_lua_app = false;
-  float game_render_scale = 1.0f;
+  elixir::RenderScale game_render_scale;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     controller = controller_;
@@ -1635,6 +1635,7 @@ GameSessionUpdateResult RobloxExperienceComposition::SurfaceChanged(
     game_render_scale = game_render_scale_;
   }
   surface.render_scale = 1.0f;
+  surface.width_scale = 1.0f;
   GameSessionUpdateResult result =
       forward && controller != nullptr
           ? controller->RebindSurface(ScaledGameSurface(
@@ -1664,19 +1665,20 @@ bool RobloxExperienceComposition::DropGameRenderScale() {
   bool forward = false;
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!elixir::RendersSmaller(game_render_scale_)) {
+    if (!game_render_scale_.smaller()) {
       return true;
     }
     if (launch_in_progress_ || active_launch_ != nullptr) {
       return false;
     }
-    game_render_scale_ = 1.0f;
+    game_render_scale_ = {};
     controller = controller_;
     forward = game_active_;
     surface = readiness_.surface;
   }
   surface_config_.ResetSurfaceScales();
   surface.render_scale = 1.0f;
+  surface.width_scale = 1.0f;
   if (forward && controller != nullptr && surface.generation != 0 &&
       surface.native_window != 0 && surface.width != 0 &&
       surface.height != 0) {
@@ -1975,7 +1977,7 @@ Status RobloxExperienceComposition::BuildLaunchObjects(
                        : Unavailable("required Surface fields are unavailable");
   }
   if (status.ok()) {
-    surface_config_.BindSurfaceScale(surface_local, surface.render_scale);
+    surface_config_.BindSurfaceScale(surface_local, RenderScaleOf(surface));
   }
 
   jclass params_class = nullptr;

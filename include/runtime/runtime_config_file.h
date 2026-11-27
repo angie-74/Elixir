@@ -19,6 +19,7 @@ struct LauncherConfigValues {
   std::string renderer = "vulkan";
   std::string present_mode = "fifo";
   double resolution_scale = 1.0;
+  double stretch = 0.0;
   bool high_priority = false;
   bool disable_power_throttling = true;
   bool timer_resolution_1ms = true;

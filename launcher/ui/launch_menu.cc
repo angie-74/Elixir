@@ -10,6 +10,7 @@
 #include "resource.h"
 #include "ui/lucide.h"
 #include "ui/ui.h"
+#include "core/i18n.h"
 
 namespace elixir::launcher::ui {
 namespace {
@@ -136,14 +137,15 @@ INT_PTR LaunchMenu::OnMessage(UINT message, WPARAM wparam, LPARAM lparam) {
   switch (message) {
     case WM_INITDIALOG: {
       SetWindowTextW(hwnd_, L"Elixir");
-      const auto child = [this](int id, const wchar_t* cls, const wchar_t* text, DWORD style) {
-        return CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style, 0, 0, 0, 0, hwnd_,
+      const DWORD reading = CurrentLanguageIsRightToLeft() ? WS_EX_RTLREADING : 0;
+      const auto child = [this, reading](int id, const wchar_t* cls, const wchar_t* text, DWORD style) {
+        return CreateWindowExW(reading, cls, text, WS_CHILD | WS_VISIBLE | style, 0, 0, 0, 0, hwnd_,
                                reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), GetModuleHandleW(nullptr), nullptr);
       };
       child(kTitleId, L"STATIC", L"Elixir", SS_LEFT | SS_NOPREFIX);
-      child(kVersionId, L"STATIC", L"Version " ELIXIR_VERSION, SS_LEFT | SS_NOPREFIX);
-      child(kLaunchMenuPlayId, L"BUTTON", L"Launch Roblox", WS_TABSTOP | WS_GROUP | BS_DEFPUSHBUTTON);
-      child(kLaunchMenuConfigureId, L"BUTTON", L"Configure settings", WS_TABSTOP | BS_PUSHBUTTON);
+      child(kVersionId, L"STATIC", TF(L"Version {0}", L"" ELIXIR_VERSION).c_str(), SS_LEFTNOWORDWRAP | SS_NOPREFIX);
+      child(kLaunchMenuPlayId, L"BUTTON", T(L"Launch Roblox").c_str(), WS_TABSTOP | WS_GROUP | BS_DEFPUSHBUTTON);
+      child(kLaunchMenuConfigureId, L"BUTTON", T(L"Configure settings").c_str(), WS_TABSTOP | BS_PUSHBUTTON);
       SendMessageW(hwnd_, DM_SETDEFID, kLaunchMenuPlayId, 0);
       SetAppearance();
       return TRUE;
@@ -249,7 +251,7 @@ void LaunchMenu::Layout() {
     SetWindowPos(GetDlgItem(hwnd_, id), nullptr, px(x), px(y), px(w), px(h), SWP_NOZORDER | SWP_NOACTIVATE);
   };
   move(kTitleId, brand_left + 72, brand_top + 5, 92, 33);
-  move(kVersionId, brand_left + 73, brand_top + 39, 98, 20);
+  move(kVersionId, brand_left + 73, brand_top + 39, 106, 20);
   const int left = stacked ? 16 : width * 44 / 100;
   const int row_top = stacked ? 82 : (height - 104) / 2;
   const int row_width = std::max(0, width - left - 16);
@@ -326,8 +328,8 @@ void LaunchMenu::DrawAction(const NMCUSTOMDRAW& draw) {
   RECT text = rect;
   text.left = rect.left + Px(16, dpi_);
   text.right -= Px(12, dpi_);
-  wchar_t label[48]{};
-  GetWindowTextW(draw.hdr.hwndFrom, label, 48);
+  wchar_t label[96]{};
+  GetWindowTextW(draw.hdr.hwndFrom, label, 96);
   SelectObject(draw.hdc, button_font_);
   SIZE label_size{};
   const int arrow_size = Px(16, dpi_);
@@ -337,7 +339,8 @@ void LaunchMenu::DrawAction(const NMCUSTOMDRAW& draw) {
     DrawIconGeometry(draw.hdc, chevron_.Get(), arrow_left, center_y, arrow_size, RGB(184, 184, 184), fill);
     text.right = arrow_left - Px(8, dpi_);
   }
-  DrawTextW(draw.hdc, label, -1, &text, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS);
+  const UINT reading = CurrentLanguageIsRightToLeft() ? DT_RTLREADING : 0;
+  DrawTextW(draw.hdc, label, -1, &text, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS | reading);
   if ((draw.uItemState & CDIS_FOCUS) && !(SendMessageW(draw.hdr.hwndFrom, WM_QUERYUISTATE, 0, 0) & UISF_HIDEFOCUS)) {
     InflateRect(&rect, -Px(4, dpi_), -Px(4, dpi_));
     DrawFocusRect(draw.hdc, &rect);

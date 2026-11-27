@@ -44,6 +44,27 @@ void AssignSecret(std::string* target, std::string_view value) {
   target->assign(value.data(), value.size());
 }
 
+void WriteAccountFile(const std::filesystem::path& file, long long user_id) {
+  if (file.empty() || user_id <= 0) return;
+  const std::string text = "{\"userId\": " + std::to_string(user_id) + "}\n";
+  std::filesystem::path temporary = file;
+  temporary += L".tmp";
+  const HANDLE handle =
+      CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (handle == INVALID_HANDLE_VALUE) return;
+  DWORD written = 0;
+  const bool complete =
+      WriteFile(handle, text.data(), static_cast<DWORD>(text.size()), &written, nullptr) && written == text.size();
+  CloseHandle(handle);
+  if (!complete || !MoveFileExW(temporary.c_str(), file.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+    DeleteFileW(temporary.c_str());
+  }
+}
+
+void RemoveAccountFile(const std::filesystem::path& file) {
+  if (!file.empty()) DeleteFileW(file.c_str());
+}
+
 ms::AuthSession ResolveAccount(ms::HttpClient& http, const std::string& credential) {
   try {
     ms::AuthService service(http);
@@ -88,6 +109,7 @@ struct SignInIdentity::State {
   Outcome last_outcome = Outcome::kPending;
   std::shared_ptr<RobloxSessionStore> store;
   std::shared_ptr<AccountBook> accounts;
+  std::filesystem::path account_file;
   std::function<long long()> now_seconds;
   std::function<void(long long)> account_changed;
   std::string saved;
@@ -130,6 +152,7 @@ std::unique_ptr<SignInIdentity> SignInIdentity::Install(jnivm::VM& vm, Options o
   state->retry_delays = std::move(options.retry_delays);
   state->store = std::move(options.store);
   state->accounts = std::move(options.accounts);
+  state->account_file = std::move(options.account_file);
   state->account_changed = std::move(options.account_changed);
   state->now_seconds = std::move(options.now_seconds);
   if (!state->now_seconds) {
@@ -164,10 +187,12 @@ void SignInIdentity::SignedOut(void* context) {
   if (state == nullptr) return;
   std::shared_ptr<RobloxSessionStore> store;
   std::shared_ptr<AccountBook> accounts;
+  std::filesystem::path account_file;
   std::string signed_out;
   {
     std::lock_guard<std::mutex> lock(state->mutex);
     if (state->stopping) return;
+    account_file = state->account_file;
     AssignSecret(&signed_out, !state->saved.empty() ? state->saved : state->last);
     ClearSecret(&state->pending);
     state->has_pending = false;
@@ -182,6 +207,7 @@ void SignInIdentity::SignedOut(void* context) {
     state->TellAccount(0);
   }
   if (store != nullptr) store->Clear();
+  RemoveAccountFile(account_file);
   if (accounts != nullptr && !signed_out.empty() && accounts->ForgetSession(signed_out)) {
     std::lock_guard<std::mutex> lock(state->mutex);
     if (!state->stopping) state->Log("accounts: the signed-out account was removed from the saved accounts");
@@ -193,7 +219,9 @@ void SignInIdentity::SignedOut(void* context) {
 void SignInIdentity::SaveIfNew(State& state, const std::string& credential, std::unique_lock<std::mutex>& lock) {
   if (state.store == nullptr || credential == state.saved) return;
   const std::shared_ptr<RobloxSessionStore> store = state.store;
+  const std::filesystem::path account_file = state.account_file;
   lock.unlock();
+  RemoveAccountFile(account_file);
   const bool saved = store->Save(credential);
   lock.lock();
   if (state.stopping) return;
@@ -262,6 +290,12 @@ void SignInIdentity::LookUp(State& state, const std::string& credential, std::un
         state.last_outcome = Outcome::kResolved;
         state.Log("sign-in: account identity set");
         state.TellAccount(identity.user_id);
+        if (state.store != nullptr && credential == state.saved) {
+          const std::filesystem::path account_file = state.account_file;
+          lock.unlock();
+          WriteAccountFile(account_file, identity.user_id);
+          lock.lock();
+        }
         if (state.accounts != nullptr) {
           const std::shared_ptr<AccountBook> accounts = state.accounts;
           const long long now = state.now_seconds();
@@ -284,9 +318,11 @@ void SignInIdentity::LookUp(State& state, const std::string& credential, std::un
                   state.IdentityNote());
         if (state.store != nullptr && credential == state.saved) {
           const std::shared_ptr<RobloxSessionStore> store = state.store;
+          const std::filesystem::path account_file = state.account_file;
           ClearSecret(&state.saved);
           lock.unlock();
           store->ClearIfEquals(credential);
+          RemoveAccountFile(account_file);
           lock.lock();
           if (!state.stopping) state.Log("sign-in: the saved session was removed");
         }

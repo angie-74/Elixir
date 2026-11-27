@@ -858,6 +858,7 @@ bool LoadLauncherJson(const std::filesystem::path& path, LauncherConfigValues* v
   reader.Choice("graphics", "present_mode", {"fifo", "mailbox", "immediate"},
                 &values->present_mode);
   reader.Number("graphics", "resolution_scale", 0.25, 1.0, &values->resolution_scale);
+  reader.Number("graphics", "stretch", 0.0, 0.5, &values->stretch);
   reader.Boolean("performance", "high_priority", &values->high_priority);
   reader.Boolean("performance", "disable_power_throttling", &values->disable_power_throttling);
   reader.Boolean("performance", "timer_resolution_1ms", &values->timer_resolution_1ms);

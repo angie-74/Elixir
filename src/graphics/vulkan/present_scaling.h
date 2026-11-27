@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "graphics/render_scale.h"
 #include "graphics/vulkan/vulkan_host_headers.h"
 
 namespace elixir::vulkan {
@@ -38,7 +39,7 @@ VkResult QueryPresentScaling(PFN_vkGetPhysicalDeviceSurfaceCapabilities2KHR quer
 
 bool NeedsStretch(const VkExtent2D& image, const VkExtent2D& current);
 
-void ScaleSurfaceCapabilities(float render_scale, VkSurfaceCapabilitiesKHR* capabilities);
+void ScaleSurfaceCapabilities(const RenderScale& render_scale, VkSurfaceCapabilitiesKHR* capabilities);
 
 }
 

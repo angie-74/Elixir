@@ -45,7 +45,7 @@ AccountUse QueryAccountUse(const std::wstring& account_id);
 bool RemoveSavedAccount(const std::wstring& accounts_dir, const std::wstring& account_id, std::wstring* error);
 
 int RefreshAccountPictures(const std::wstring& accounts_dir, const std::vector<SavedAccount>& accounts,
-                           const HttpGetFunction& get);
+                           const HttpGetFunction& get, bool* pending = nullptr);
 
 }
 

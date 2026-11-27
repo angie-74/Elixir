@@ -11,6 +11,7 @@
 #include "core/fflags_file.h"
 #include "core/process.h"
 #include "core/util.h"
+#include "core/i18n.h"
 #include "ui/app.h"
 
 namespace elixir::launcher::ui {
@@ -53,7 +54,8 @@ bool ShowFileDialog(HWND owner, bool save, const wchar_t* title, const wchar_t* 
                               IID_PPV_ARGS(&dialog)))) {
     return false;
   }
-  const COMDLG_FILTERSPEC filters[] = {{L"JSON files (*.json)", L"*.json"}, {L"All files (*.*)", L"*.*"}};
+  const COMDLG_FILTERSPEC filters[] = {{T(L"JSON files (*.json)").c_str(), L"*.json"},
+                                       {T(L"All files (*.*)").c_str(), L"*.*"}};
   dialog->SetFileTypes(2, filters);
   dialog->SetTitle(title);
   if (save) {
@@ -141,12 +143,12 @@ void App::LoadFastFlags(bool force) {
 bool App::SaveFastFlags() {
   if (!fast_flags_.editor) return false;
   if (!fast_flags_.load_error.empty() && !fast_flags_.editor->dirty()) {
-    SetFastFlagMessage(L"Your Fast Flags file can’t be read. Use “Start over” to replace it.", 1);
+    SetFastFlagMessage(T(L"Your Fast Flags file can’t be read. Use “Start over” to replace it."), 1);
     return false;
   }
   std::string error;
   if (!fast_flags_.editor->Save(&error)) {
-    SetFastFlagMessage(L"Your Fast Flags couldn’t be saved. Make sure your drive has free space.", 2);
+    SetFastFlagMessage(T(L"Your Fast Flags couldn’t be saved. Make sure your drive has free space."), 2);
     return false;
   }
   fast_flags_.load_error.clear();
@@ -180,11 +182,11 @@ void App::AddFastFlag() {
   if (!fast_flags_.editor) return;
   const std::string name = WideToUtf8(TrimWide(fast_flags_.new_name));
   if (name.empty()) {
-    SetFastFlagMessage(L"Type a flag name first.", 1);
+    SetFastFlagMessage(T(L"Type a flag name first."), 1);
     return;
   }
   if (fast_flags_.editor->flags().Contains(name)) {
-    SetFastFlagMessage(Utf8ToWide(name) + L" is already in your list. Change its value there.", 1);
+    SetFastFlagMessage(TF(L"{0} is already in your list. Change its value there.", Utf8ToWide(name)), 1);
     return;
   }
   const fflags::EditResult result = fast_flags_.editor->SetFlag(name, WideToUtf8(fast_flags_.new_value));
@@ -194,7 +196,7 @@ void App::AddFastFlag() {
   }
   std::wstring message;
   if (result.status == fflags::FlagStatus::kInvalidValue) {
-    message = Utf8ToWide(name) + L" has a value that isn’t valid: " + Utf8ToWide(result.message) + L".";
+    message = TF(L"{0} has a value that isn’t valid: {1}.", Utf8ToWide(name), Utf8ToWide(result.message));
   }
   fast_flags_.new_name.clear();
   fast_flags_.new_value.clear();
@@ -212,7 +214,7 @@ void App::ImportFastFlagsText(const std::string& json, bool replace) {
       fast_flags_.editor->Import(json, replace ? fflags::ImportMode::kReplace : fflags::ImportMode::kMerge);
   if (!summary.ok) {
     fast_flags_.import_error = Utf8ToWide(summary.error);
-    SetFastFlagMessage(L"Nothing was imported.", 2);
+    SetFastFlagMessage(T(L"Nothing was imported."), 2);
     return;
   }
   fast_flags_.import_error.clear();
@@ -226,13 +228,14 @@ void App::ImportFastFlagsText(const std::string& json, bool replace) {
 void App::ImportFastFlagsFile(bool replace) {
   if (options_.test_mode) return;
   std::wstring path;
-  if (!ShowFileDialog(hwnd_, false, replace ? L"Replace your Fast Flags" : L"Import Fast Flags", nullptr, &path)) {
+  if (!ShowFileDialog(hwnd_, false, (replace ? T(L"Replace your Fast Flags") : T(L"Import Fast Flags")).c_str(), nullptr,
+                      &path)) {
     return;
   }
   std::string bytes;
   std::wstring error;
   if (!ReadFileBytes(path, &bytes, &error, 16u << 20)) {
-    SetFastFlagMessage(L"That file couldn’t be opened.", 2);
+    SetFastFlagMessage(T(L"That file couldn’t be opened."), 2);
     return;
   }
   ImportFastFlagsText(bytes, replace);
@@ -241,7 +244,7 @@ void App::ImportFastFlagsFile(bool replace) {
 void App::ExportFastFlags(bool applied_only) {
   if (!fast_flags_.editor || options_.test_mode) return;
   std::wstring path;
-  if (!ShowFileDialog(hwnd_, true, applied_only ? L"Export applied Fast Flags" : L"Export Fast Flags",
+  if (!ShowFileDialog(hwnd_, true, (applied_only ? T(L"Export applied Fast Flags") : T(L"Export Fast Flags")).c_str(),
                       applied_only ? L"Fast Flags (applied).json" : L"Fast Flags.json", &path)) {
     return;
   }
@@ -249,7 +252,7 @@ void App::ExportFastFlags(bool applied_only) {
   if (AtomicWriteFile(path, fast_flags_.editor->Export(applied_only), AtomicWriteBackup::kNone, &error)) {
     SetFastFlagMessage({}, 4);
   } else {
-    SetFastFlagMessage(L"That file couldn’t be saved. Try another folder.", 2);
+    SetFastFlagMessage(T(L"That file couldn’t be saved. Try another folder."), 2);
   }
 }
 
@@ -299,11 +302,11 @@ bool App::GuardFastFlags(std::optional<Page> next_page, bool closing) {
   Overlay overlay;
   overlay.id = L"fflags.guard";
   overlay.status = 1;
-  overlay.title = L"Save your Fast Flags changes?";
-  overlay.body = L"If you don’t save, your changes are lost.";
-  overlay.actions = {{L"fflags.guard.save", L"Save", ButtonStyle::kStandard},
-                     {L"fflags.guard.discard", L"Discard changes", ButtonStyle::kDanger},
-                     {L"fflags.guard.cancel", L"Cancel", ButtonStyle::kStandard}};
+  overlay.title = T(L"Save your Fast Flags changes?");
+  overlay.body = T(L"If you don’t save, your changes are lost.");
+  overlay.actions = {{L"fflags.guard.save", T(L"Save"), ButtonStyle::kStandard},
+                     {L"fflags.guard.discard", T(L"Discard changes"), ButtonStyle::kDanger},
+                     {L"fflags.guard.cancel", T(L"Cancel"), ButtonStyle::kStandard}};
   ShowOverlay(std::move(overlay));
   return true;
 }
@@ -336,11 +339,11 @@ void App::MeasureCaches() {
 
 void App::AskClearCaches() {
   if (RuntimeRunningNow()) {
-    ShowToast(L"Close Roblox before clearing the cache.");
+    ShowToast(T(L"Close Roblox before clearing the cache."));
     return;
   }
   if (PackageWorkRunning()) {
-    ShowToast(L"Wait for Roblox to finish installing, then try again.");
+    ShowToast(T(L"Wait for Roblox to finish installing, then try again."));
     return;
   }
   std::uint64_t total = 0;
@@ -350,23 +353,23 @@ void App::AskClearCaches() {
   Overlay overlay;
   overlay.id = L"cache.clear";
   overlay.status = 1;
-  overlay.title = L"Clear Roblox’s cache?";
-  overlay.body = L"This frees " + FormatByteSize(total) + L". Your sign-in, settings and Fast Flags are kept.";
-  overlay.actions = {{L"cache.clear.confirm", L"Clear cache", ButtonStyle::kDanger},
-                     {L"overlay.close", L"Cancel", ButtonStyle::kStandard}};
+  overlay.title = T(L"Clear Roblox’s cache?");
+  overlay.body = TF(L"This frees {0}. Your sign-in, settings and Fast Flags are kept.", FormatByteSize(total));
+  overlay.actions = {{L"cache.clear.confirm", T(L"Clear cache"), ButtonStyle::kDanger},
+                     {L"overlay.close", T(L"Cancel"), ButtonStyle::kStandard}};
   ShowOverlay(std::move(overlay));
 }
 
 void App::ClearCaches() {
   if (cache_.clearing) return;
   if (PackageWorkRunning()) {
-    cache_.message = L"Not cleared. Wait for Roblox to finish installing, then try again.";
+    cache_.message = T(L"Not cleared. Wait for Roblox to finish installing, then try again.");
     cache_.message_status = 1;
     Invalidate();
     return;
   }
   if (options_.test_mode) {
-    cache_.message = L"Not cleared: test mode never deletes files.";
+    cache_.message = T(L"Not cleared: test mode never deletes files.");
     cache_.message_status = 4;
     return;
   }
@@ -378,14 +381,14 @@ void App::ClearCaches() {
     return [this, result, running] {
       cache_.clearing = false;
       if (result.ok) {
-        cache_.message = L"Freed " + FormatByteSize(result.bytes_freed) + L".";
+        cache_.message = TF(L"Freed {0}.", FormatByteSize(result.bytes_freed));
         cache_.message_status = 0;
       } else if (running) {
-        cache_.message = L"Not cleared. Close Roblox, then try again.";
+        cache_.message = T(L"Not cleared. Close Roblox, then try again.");
         cache_.message_status = 2;
       } else {
         cache_.message =
-            L"Freed " + FormatByteSize(result.bytes_freed) + L". Some files were in use and weren’t deleted.";
+            TF(L"Freed {0}. Some files were in use and weren’t deleted.", FormatByteSize(result.bytes_freed));
         cache_.message_status = 2;
       }
       MeasureCaches();
@@ -395,16 +398,21 @@ void App::ClearCaches() {
 }
 
 std::wstring App::RobloxUpdateStatus() const {
-  const std::wstring version =
-      roblox_update_.version_name.empty() ? std::wstring() : L" " + Utf8ToWide(roblox_update_.version_name);
-  const std::wstring percent =
-      roblox_update_.percent >= 0 ? L" " + std::to_wstring(std::min(roblox_update_.percent, 100)) + L"%" : std::wstring();
+  const std::wstring version = Utf8ToWide(roblox_update_.version_name);
+  const auto with_percent = [this](const std::wstring& text) {
+    return roblox_update_.percent >= 0 ? TF(L"{0} {1}%", text, std::min(roblox_update_.percent, 100)) : text;
+  };
   switch (roblox_update_.phase) {
     case RobloxUpdatePhase::kChecking:
-      return roblox_update_.chosen ? L"Getting Roblox" + version + L"…" : std::wstring(L"Looking for the newest Roblox…");
-    case RobloxUpdatePhase::kDownloading: return L"Downloading Roblox" + version + L"…" + percent;
-    case RobloxUpdatePhase::kVerifying: return L"Checking that Roblox" + version + L" is Roblox’s own file…";
-    case RobloxUpdatePhase::kInstalling: return L"Installing Roblox" + version + L"…" + percent;
+      if (!roblox_update_.chosen) return T(L"Looking for the newest Roblox…");
+      return version.empty() ? T(L"Getting Roblox…") : TF(L"Getting Roblox {0}…", version);
+    case RobloxUpdatePhase::kDownloading:
+      return with_percent(version.empty() ? T(L"Downloading Roblox…") : TF(L"Downloading Roblox {0}…", version));
+    case RobloxUpdatePhase::kVerifying:
+      return version.empty() ? T(L"Checking that Roblox is Roblox’s own file…")
+                             : TF(L"Checking that Roblox {0} is Roblox’s own file…", version);
+    case RobloxUpdatePhase::kInstalling:
+      return with_percent(version.empty() ? T(L"Installing Roblox…") : TF(L"Installing Roblox {0}…", version));
   }
   return {};
 }
@@ -480,19 +488,19 @@ void App::CheckRobloxVersion(bool notify) {
         const auto& latest = *roblox_version_.latest;
         if (config_.installed.package == kRobloxPackage && latest.version_code > config_.installed.version_code) {
           if (config_.roblox.auto_update && RobloxUpdatePossible()) {
-            if (notify) ShowToast(L"Updating Roblox to " + Utf8ToWide(latest.version_name) + L"…");
+            if (notify) ShowToast(TF(L"Updating Roblox to {0}…", Utf8ToWide(latest.version_name)));
             StartRobloxUpdate( false);
           } else if (notify) {
-            ShowToast(L"Roblox " + Utf8ToWide(latest.version_name) + L" is available. Open Installation to update.");
+            ShowToast(TF(L"Roblox {0} is available. Open Installation to update.", Utf8ToWide(latest.version_name)));
           }
         }
       } else {
-        roblox_version_.error = L"Couldn’t check for Roblox updates.";
         const auto now = UnixNow();
         if (list.retry_at > now) {
-          roblox_version_.error += L" Try again at " + FormatLocalClockTime(list.retry_at, now) + L".";
+          roblox_version_.error = TF(L"Couldn’t check for Roblox updates. Try again at {0}.",
+                                     FormatLocalClockTime(list.retry_at, now));
         } else {
-          roblox_version_.error += L" Try again later.";
+          roblox_version_.error = T(L"Couldn’t check for Roblox updates. Try again later.");
         }
       }
       Invalidate();
@@ -505,7 +513,7 @@ void App::SwitchToInstalledVersion(const InstalledApp& next, SwitchDone done) {
   if (runtime_.running || RuntimeRunningNow()) {
     staged_roblox_ = next;
     done(SwitchOutcome::kStaged,
-         L"Roblox " + Utf8ToWide(next.version_name) + L" is ready. Elixir switches to it when you close Roblox.");
+         TF(L"Roblox {0} is ready. Elixir switches to it when you close Roblox.", Utf8ToWide(next.version_name)));
     return;
   }
   const InstalledApp current = config_.installed;
@@ -522,12 +530,12 @@ void App::SwitchToInstalledVersion(const InstalledApp& next, SwitchDone done) {
     if (!save_error_.empty()) {
       config_.installed = current;
       config_.roblox = before;
-      return L"Couldn’t switch to Roblox " + Utf8ToWide(next.version_name) + L". Free up disk space and try again.";
+      return TF(L"Couldn’t switch to Roblox {0}. Free up disk space and try again.", Utf8ToWide(next.version_name));
     }
     staged_roblox_.reset();
     return {};
   };
-  const std::wstring switched = L"Switched to Roblox " + Utf8ToWide(next.version_name) + L".";
+  const std::wstring switched = TF(L"Switched to Roblox {0}.", Utf8ToWide(next.version_name));
   if (!replacing) {
     const std::wstring error = commit(nullptr);
     done(error.empty() ? SwitchOutcome::kSwitched : SwitchOutcome::kFailed, error.empty() ? switched : error);
@@ -543,7 +551,7 @@ void App::SwitchToInstalledVersion(const InstalledApp& next, SwitchDone done) {
     return [this, snapshot, backups, current, next, commit, switched, done] {
       switching_ = false;
       if (!snapshot.ok) {
-        done(SwitchOutcome::kFailed, L"Couldn’t back up your Roblox data. Free up disk space and try again.");
+        done(SwitchOutcome::kFailed, T(L"Couldn’t back up your Roblox data. Free up disk space and try again."));
         Invalidate();
         return;
       }
@@ -551,7 +559,7 @@ void App::SwitchToInstalledVersion(const InstalledApp& next, SwitchDone done) {
         DeleteDirectoryTree(snapshot.path);
         staged_roblox_ = next;
         done(SwitchOutcome::kStaged,
-             L"Roblox " + Utf8ToWide(next.version_name) + L" is ready. Elixir switches to it when you close Roblox.");
+             TF(L"Roblox {0} is ready. Elixir switches to it when you close Roblox.", Utf8ToWide(next.version_name)));
         Invalidate();
         return;
       }
@@ -582,14 +590,14 @@ void App::AskRollBackRoblox() {
   Overlay overlay;
   overlay.id = L"roblox.rollback";
   overlay.status = 1;
-  overlay.title = L"Go back to Roblox " + Utf8ToWide(previous.version_name) + L"?";
+  overlay.title = TF(L"Go back to Roblox {0}?", Utf8ToWide(previous.version_name));
   const std::wstring data = config_.roblox.previous_snapshot.empty()
-                                ? L"Your Roblox data stays as it is."
-                                : L"Your Roblox data goes back to how it was before the last update. Your current "
-                                  L"data is backed up first.";
+                                ? T(L"Your Roblox data stays as it is.")
+                                : T(L"Your Roblox data goes back to how it was before the last update. Your current "
+                                  L"data is backed up first.");
   overlay.body = data;
-  overlay.actions = {{L"overlay.rollback", L"Roll back", ButtonStyle::kStandard},
-                     {L"overlay.close", L"Cancel", ButtonStyle::kStandard}};
+  overlay.actions = {{L"overlay.rollback", T(L"Roll back"), ButtonStyle::kStandard},
+                     {L"overlay.close", T(L"Cancel"), ButtonStyle::kStandard}};
   ShowOverlay(std::move(overlay));
 }
 
@@ -598,11 +606,11 @@ void App::RollBackRoblox() {
   const InstalledApp current = config_.installed;
   if (!previous.present() || !current.present() || switching_) return;
   if (runtime_.running || RuntimeRunningNow() || PackageWorkRunning()) {
-    ShowToast(L"Close Roblox and wait for any install to finish, then try again.");
+    ShowToast(T(L"Close Roblox and wait for any install to finish, then try again."));
     return;
   }
   if (!PathIsDirectory(Utf8ToWide(previous.install_dir))) {
-    ShowToast(L"Roblox " + Utf8ToWide(previous.version_name) + L" is no longer available. Nothing was changed.");
+    ShowToast(TF(L"Roblox {0} is no longer available. Nothing was changed.", Utf8ToWide(previous.version_name)));
     return;
   }
   const std::wstring backups = AppBackupsDirectory(BackupsRoot(), current.package);
@@ -618,7 +626,7 @@ void App::RollBackRoblox() {
     return [this, error, replaced, previous, current] {
       switching_ = false;
       if (!error.empty()) {
-        ShowToast(L"Couldn’t restore your Roblox data. Nothing was changed.");
+        ShowToast(T(L"Couldn’t restore your Roblox data. Nothing was changed."));
         Invalidate();
         return;
       }
@@ -630,11 +638,11 @@ void App::RollBackRoblox() {
       if (!save_error_.empty()) {
         config_.installed = current;
         config_.roblox = saved;
-        ShowToast(L"Couldn’t roll back. Free up disk space and try again.");
+        ShowToast(T(L"Couldn’t roll back. Free up disk space and try again."));
         Invalidate();
         return;
       }
-      ShowToast(L"Back on Roblox " + Utf8ToWide(previous.version_name) + L".");
+      ShowToast(TF(L"Back on Roblox {0}.", Utf8ToWide(previous.version_name)));
       Invalidate();
     };
   });
@@ -689,7 +697,7 @@ bool App::OnRobloxOverlayAction(const std::wstring& id) {
     CloseOverlay();
     const std::wstring text = ReadClipboardText(hwnd_);
     if (TrimWide(text).empty()) {
-      SetFastFlagMessage(L"There’s nothing to paste. Copy the JSON first.", 1);
+      SetFastFlagMessage(T(L"There’s nothing to paste. Copy the JSON first."), 1);
     } else {
       ImportFastFlagsText(WideToUtf8(text), false);
     }
@@ -703,9 +711,9 @@ bool App::OnRobloxOverlayAction(const std::wstring& id) {
   if (id == L"fflags.export.copy") {
     CloseOverlay();
     if (fast_flags_.editor && WriteClipboardText(hwnd_, Utf8ToWide(fast_flags_.editor->Export(false)))) {
-      ShowToast(L"Copied.");
+      ShowToast(T(L"Copied."));
     } else {
-      ShowToast(L"Couldn’t copy your Fast Flags.");
+      ShowToast(T(L"Couldn’t copy your Fast Flags."));
     }
     return true;
   }

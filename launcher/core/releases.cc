@@ -11,6 +11,7 @@
 #include "core/project.h"
 #include "core/sha256.h"
 #include "core/util.h"
+#include "core/i18n.h"
 
 namespace elixir::launcher {
 
@@ -192,7 +193,7 @@ UpdateManifest ManifestForRelease(const ElixirRelease& release) {
 ReleaseList FetchReleases(const HttpGetFunction& get) {
   ReleaseList list;
   if (!get) {
-    list.error = L"Couldn’t check for updates.";
+    list.error = T(L"Couldn’t check for updates.");
     return list;
   }
   const HttpResult http = get(ReleasesApiUrl(), 2u << 20);
@@ -202,9 +203,9 @@ ReleaseList FetchReleases(const HttpGetFunction& get) {
       return list;
     }
     list.error = http.status == 403 || http.status == 429
-                     ? std::wstring(L"GitHub is limiting requests right now. Try again in a few minutes.")
-                     : http.status != 0 ? std::wstring(L"GitHub didn’t answer. Try again later.") : http.error;
-    if (list.error.empty()) list.error = L"Couldn’t check for updates. Try again later.";
+                     ? std::wstring(T(L"GitHub is limiting requests right now. Try again in a few minutes."))
+                     : http.status != 0 ? std::wstring(T(L"GitHub didn’t answer. Try again later.")) : http.error;
+    if (list.error.empty()) list.error = T(L"Couldn’t check for updates. Try again later.");
     return list;
   }
   std::string error;

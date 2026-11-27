@@ -13,6 +13,7 @@
 #include <unordered_map>
 
 #include "core/util.h"
+#include "core/i18n.h"
 
 namespace elixir::launcher {
 
@@ -66,7 +67,7 @@ bool ReadCrashLogText(const std::wstring& path, std::wstring* text, std::wstring
   const auto report = [error](DWORD code) {
     if (error == nullptr) return;
     *error = ErrorCause(code);
-    if (error->empty()) *error = L"Windows couldn’t read the file.";
+    if (error->empty()) *error = T(L"Windows couldn’t read the file.");
   };
   HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                             nullptr, OPEN_EXISTING, 0, nullptr);
@@ -99,8 +100,8 @@ bool ReadCrashLogText(const std::wstring& path, std::wstring* text, std::wstring
     text->push_back(wide[i]);
   }
   if (total > max_bytes) {
-    *text += L"\r\n\r\n[Showing the first " + FormatByteSize(max_bytes) + L" of " + FormatByteSize(total) +
-             L". Open the folder to see the whole file.]";
+    *text += L"\r\n\r\n" + TF(L"[Showing the first {0} of {1}. Open the folder to see the whole file.]",
+                                FormatByteSize(max_bytes), FormatByteSize(total));
   }
   return true;
 }
@@ -129,7 +130,7 @@ bool RecycleFiles(const std::vector<std::wstring>& paths, std::wstring* error) {
   const int result = SHFileOperationW(&operation);
   if (result != 0 || operation.fAnyOperationsAborted) {
     if (error) {
-      *error = operation.fAnyOperationsAborted ? L"Cancelled." : L"The files couldn’t be moved to the Recycle Bin.";
+      *error = operation.fAnyOperationsAborted ? L"Cancelled." : T(L"The files couldn’t be moved to the Recycle Bin.");
     }
     return false;
   }

@@ -15,6 +15,7 @@
 #include "core/installer.h"
 #include "core/project.h"
 #include "core/util.h"
+#include "core/i18n.h"
 #include "ui/app.h"
 #include "ui/theme.h"
 
@@ -35,33 +36,34 @@ constexpr float kBarHeight = 56.0f;
 constexpr float kBarButtonWidth = 96.0f;
 constexpr float kPromptButtonWidth = 100.0f;
 constexpr float kPromptFooterHeight = 64.0f;
-constexpr const wchar_t* kSteps[] = {L"Welcome", L"Install", L"Completion"};
+constexpr const wchar_t* kSteps[] = {ELIXIR_TR(L"Welcome"), ELIXIR_TR(L"Install##step"), ELIXIR_TR(L"Completion")};
 
-constexpr wchar_t kWelcomeThanks[] = L"Thank you for downloading Elixir.";
-constexpr wchar_t kWelcomeSourceBefore[] = L"The only official website to download Elixir from is ";
+constexpr wchar_t kWelcomeThanks[] = ELIXIR_TR(L"Thank you for downloading Elixir.");
+constexpr wchar_t kWelcomeSource[] = ELIXIR_TR(
+    L"The only official website to download Elixir from is {0}, so please verify that you got it from an official "
+    L"source.");
 constexpr wchar_t kWelcomeSourceLink[] = L"GitHub";
-constexpr wchar_t kWelcomeSourceAfter[] = L", so please verify that you got it from an official source.";
-constexpr wchar_t kWelcomeProcess[] =
+constexpr wchar_t kWelcomeProcess[] = ELIXIR_TR(
     L"This installation process will be quick and simple, and you will be able to configure any of Elixir’s "
-    L"settings after installation.";
-constexpr wchar_t kLocationText[] =
+    L"settings after installation.");
+constexpr wchar_t kLocationText[] = ELIXIR_TR(
     L"Roblox will also be installed to this path. Change this if you prefer to install all your games to a separate "
-    L"drive. Otherwise, it’s recommended that you keep this as it is.";
-constexpr wchar_t kShortcutsText[] =
+    L"drive. Otherwise, it’s recommended that you keep this as it is.");
+constexpr wchar_t kShortcutsText[] = ELIXIR_TR(
     L"These are general shortcuts that bring up a multi-choice launch menu. Shortcuts for specific functions can be "
-    L"created later in the settings.";
-constexpr wchar_t kInstalledText[] = L"Elixir has successfully been installed.";
-constexpr wchar_t kRobloxLaterText[] =
+    L"created later in the settings.");
+constexpr wchar_t kInstalledText[] = ELIXIR_TR(L"Elixir has successfully been installed.");
+constexpr wchar_t kRobloxLaterText[] = ELIXIR_TR(
     L"Roblox has not yet been installed, that will happen when you launch it with Elixir for the first time. "
-    L"However, before you do that, you may want to configure Elixir’s settings first.";
+    L"However, before you do that, you may want to configure Elixir’s settings first.");
 
 std::wstring OwnFolderQuestion(const std::wstring& suggestion) {
-  return L"The folder you’ve chosen to install Elixir to already exists and is NOT empty. It is strongly "
-         L"recommended for Elixir to be installed to its own independent folder.\n\n"
-         L"Changing to the following location is suggested:\n" +
-         suggestion +
-         L"\n\nWould you like to change to the suggested location?\n"
-         L"Selecting ‘No’ will ignore this warning and continue installation.";
+  return TF(L"The folder you’ve chosen to install Elixir to already exists and is NOT empty. It is strongly "
+            L"recommended for Elixir to be installed to its own independent folder.\n\n"
+            L"Changing to the following location is suggested:\n{0}\n\n"
+            L"Would you like to change to the suggested location?\n"
+            L"Selecting ‘No’ will ignore this warning and continue installation.",
+            suggestion);
 }
 
 }
@@ -90,9 +92,9 @@ void App::BuildInstallerFrame(Ui& ui, float width, float height) {
       ui.Fill(row, theme::kNavSelected, theme::kControlRadius);
       ui.Fill(D2D1::RectF(row.left, row.top + 11.0f, row.left + 3.0f, row.bottom - 11.0f), theme::kText, 1.5f);
     }
-    ui.TextLine(D2D1::RectF(row.left + 16.0f, row.top, row.right - 8.0f, row.bottom), kSteps[i], TextStyle::kBody,
+    ui.TextLine(D2D1::RectF(row.left + 16.0f, row.top, row.right - 8.0f, row.bottom), T(kSteps[i]), TextStyle::kBody,
                 current ? theme::kText : theme::kTextDisabled);
-    ui.Label(row, kSteps[i]);
+    ui.Label(row, T(kSteps[i]));
     nav_y += 42.0f;
   }
 
@@ -100,8 +102,8 @@ void App::BuildInstallerFrame(Ui& ui, float width, float height) {
   const float content_width = std::max(240.0f, width - x - 14.0f);
   float top = kMargin;
   const float title_height =
-      ui.Text(x, top, content_width, kSteps[installer_.step], TextStyle::kTitle, theme::kText);
-  ui.Label(D2D1::RectF(x, top, x + content_width, top + title_height), kSteps[installer_.step]);
+      ui.Text(x, top, content_width, T(kSteps[installer_.step]), TextStyle::kTitle, theme::kText);
+  ui.Label(D2D1::RectF(x, top, x + content_width, top + title_height), T(kSteps[installer_.step]));
   top += title_height + 9.0f;
 
   viewport_ = D2D1::RectF(x - 4.0f, top, width, bar_top);
@@ -134,21 +136,21 @@ void App::BuildInstallerFrame(Ui& ui, float width, float height) {
   const float close_left = width - 14.0f - kBarButtonWidth;
   const float next_left = close_left - 12.0f - kBarButtonWidth;
   const float back_left = next_left - 8.0f - kBarButtonWidth;
-  const auto bar_button = [&](const wchar_t* id, float left, const wchar_t* label, bool enabled) {
+  const auto bar_button = [&](const wchar_t* id, float left, const std::wstring& label, bool enabled) {
     return ui.Button(id, D2D1::RectF(left, button_top, left + kBarButtonWidth, button_top + theme::kButtonHeight),
                      label, ButtonStyle::kStandard, enabled);
   };
-  if (bar_button(L"installer.back", back_left, L"Back", installer_.step == 1)) {
+  if (bar_button(L"installer.back", back_left, T(L"Back"), installer_.step == 1)) {
     Defer([this] {
       if (!state_.editing.empty()) EndEdit(true);
       installer_.step = 0;
       Invalidate();
     });
   }
-  if (bar_button(L"installer.next", next_left, installer_.step == 1 ? L"Install" : L"Next", installer_.step < 2)) {
+  if (bar_button(L"installer.next", next_left, installer_.step == 1 ? T(L"Install") : T(L"Next"), installer_.step < 2)) {
     Defer([this] { InstallerNext(); });
   }
-  if (bar_button(L"installer.close", close_left, L"Close", true)) {
+  if (bar_button(L"installer.close", close_left, T(L"Close"), true)) {
     Defer([this] { PostMessageW(hwnd_, WM_CLOSE, 0, 0); });
   }
 }
@@ -160,17 +162,22 @@ float App::BuildInstallerWelcome(Ui& ui, float x, float y, float width) {
     y += height;
   };
   const float line = ui.TextHeight(L"Ag", TextStyle::kBody, width);
-  paragraph(kWelcomeThanks);
+  paragraph(T(kWelcomeThanks));
   y += line;
 
   const float source_top = y;
-  const float before_width = ui.TextWidth(kWelcomeSourceBefore, TextStyle::kBody);
-  ui.Text(x, y, before_width + 2.0f, kWelcomeSourceBefore, TextStyle::kBody, theme::kText);
-  float link_width = 0.0f;
-  if (ui.Link(L"installer.website", x + before_width, y, kWelcomeSourceLink, &link_width, TextStyle::kBody)) {
-    Defer([this] { OpenPath(kProjectWebsite); });
+  const std::wstring& source = T(kWelcomeSource);
+  const std::size_t link_at = source.find(L"{0}");
+  const std::wstring source_before = source.substr(0, link_at);
+  const std::wstring source_after = link_at == std::wstring::npos ? std::wstring() : source.substr(link_at + 3);
+  const float link_width = ui.TextWidth(kWelcomeSourceLink, TextStyle::kBody) + 1.0f;
+  float before_width = ui.TextWidth(source_before, TextStyle::kBody);
+  const bool before_fits = before_width + link_width <= width;
+  if (!before_fits) {
+    y += ui.Text(x, y, width, source_before, TextStyle::kBody, theme::kText);
+    before_width = 0.0f;
   }
-  const std::wstring_view after = kWelcomeSourceAfter;
+  const std::wstring_view after = source_after;
   const float room = width - before_width - link_width;
   std::size_t fitted = 0;
   for (std::size_t at = 0; at < after.size();) {
@@ -180,25 +187,43 @@ float App::BuildInstallerWelcome(Ui& ui, float x, float y, float width) {
     fitted = end;
     at = end == after.size() ? end : end + 1;
   }
-  if (fitted != 0) {
-    ui.Text(x + before_width + link_width, y, room + 2.0f, after.substr(0, fitted), TextStyle::kBody, theme::kText);
+  const std::wstring_view first = after.substr(0, fitted);
+  float before_left = x;
+  float link_left = x + before_width;
+  float first_left = x + before_width + link_width;
+  if (CurrentLanguageIsRightToLeft()) {
+    const bool spaced = !source_before.empty() && source_before.back() == L' ';
+    first_left = x;
+    link_left = x + (fitted != 0 ? ui.TextWidth(first, TextStyle::kBody) : 0.0f);
+    before_left = link_left + link_width + (spaced ? ui.TextWidth(L" ", TextStyle::kBody) : 0.0f);
   }
-  y += line;
+  float first_line = line;
+  if (before_fits) {
+    first_line = std::max(
+        first_line, ui.Text(before_left, y, before_width + 2.0f, source_before, TextStyle::kBody, theme::kText));
+  }
+  if (ui.Link(L"installer.website", link_left, y, kWelcomeSourceLink, nullptr, TextStyle::kBody)) {
+    Defer([this] { OpenPath(kProjectWebsite); });
+  }
+  if (fitted != 0) {
+    first_line = std::max(first_line, ui.Text(first_left, y, room + 2.0f, first, TextStyle::kBody, theme::kText));
+  }
+  y += first_line;
   std::wstring_view rest = after.substr(fitted);
   while (!rest.empty() && rest.front() == L' ') rest.remove_prefix(1);
   if (!rest.empty()) y += ui.Text(x, y, width, rest, TextStyle::kBody, theme::kText);
   ui.Label(D2D1::RectF(x, source_top, x + width, y),
-           std::wstring(kWelcomeSourceBefore) + kWelcomeSourceLink + kWelcomeSourceAfter);
+           source_before + kWelcomeSourceLink + source_after);
   y += line;
 
-  paragraph(kWelcomeProcess);
+  paragraph(T(kWelcomeProcess));
   y += 24.0f;
-  paragraph(L"Please click ‘Next’ to continue.");
+  paragraph(T(L"Please click ‘Next’ to continue."));
   return y;
 }
 
 float App::BuildInstallerLocation(Ui& ui, float x, float y, float width) {
-  const auto heading = [&](const wchar_t* text) {
+  const auto heading = [&](const std::wstring& text) {
     const float height = ui.Text(x, y, width, text, TextStyle::kSection, theme::kText);
     ui.Label(D2D1::RectF(x, y, x + width, y + height), text);
     y += height + 2.0f;
@@ -209,30 +234,30 @@ float App::BuildInstallerLocation(Ui& ui, float x, float y, float width) {
     y += height;
   };
 
-  heading(L"Choose where to install to");
-  paragraph(kLocationText, theme::kText);
+  heading(T(L"Choose where to install to"));
+  paragraph(T(kLocationText), theme::kText);
   y += 8.0f;
 
   int card = ui.BeginCard(x, y, width);
   const float pad = 12.0f;
   const float row_top = y + pad;
-  const float browse_width = std::max(84.0f, ui.ButtonWidth(L"Browse"));
-  const float reset_width = std::max(76.0f, ui.ButtonWidth(L"Reset"));
+  const float browse_width = std::max(84.0f, ui.ButtonWidth(T(L"Browse")));
+  const float reset_width = std::max(76.0f, ui.ButtonWidth(T(L"Reset")));
   const float reset_left = x + width - pad - reset_width;
   const float browse_left = reset_left - 8.0f - browse_width;
   const D2D1_RECT_F field = D2D1::RectF(x + pad, row_top, browse_left - 8.0f, row_top + 35.0f);
-  if (ui.TextField(L"installer.location", field, &installer_.location, L"", L"Install location")) {
+  if (ui.TextField(L"installer.location", field, &installer_.location, L"", T(L"Install location"))) {
     installer_.location = NormalizeInstallLocation(installer_.location);
     installer_.data_found = ExistingDataPresent(installer_.location);
     installer_.own_folder_declined = false;
     installer_.error.clear();
   }
   if (ui.Button(L"installer.browse", D2D1::RectF(browse_left, row_top, browse_left + browse_width, row_top + 35.0f),
-                L"Browse")) {
+                T(L"Browse"))) {
     Defer([this] { InstallerBrowse(); });
   }
   if (ui.Button(L"installer.reset", D2D1::RectF(reset_left, row_top, reset_left + reset_width, row_top + 35.0f),
-                L"Reset")) {
+                T(L"Reset"))) {
     Defer([this] {
       if (!state_.editing.empty()) EndEdit(false);
       installer_.location = DefaultInstallLocation(options_.install_environment);
@@ -246,7 +271,7 @@ float App::BuildInstallerLocation(Ui& ui, float x, float y, float width) {
 
   if (installer_.data_found) {
     y += 8.0f;
-    paragraph(L"Existing data found. Your mods and settings will be restored.", theme::kText);
+    paragraph(T(L"Existing data found. Your mods and settings will be restored."), theme::kText);
   }
   if (!installer_.error.empty()) {
     y += 8.0f;
@@ -254,37 +279,37 @@ float App::BuildInstallerLocation(Ui& ui, float x, float y, float width) {
   }
 
   y += 16.0f;
-  heading(L"Shortcuts");
-  paragraph(kShortcutsText, theme::kText);
+  heading(T(L"Shortcuts"));
+  paragraph(T(kShortcutsText), theme::kText);
   y += 8.0f;
 
   const float gap = 8.0f;
   const float half = (width - gap) / 2.0f;
-  const auto option = [&](const wchar_t* id, float left, const wchar_t* label, bool* value) {
+  const auto option = [&](const wchar_t* id, float left, const std::wstring& label, bool* value) {
     const int option_card = ui.BeginCard(left, y, half);
-    const float toggle_width = 96.0f;
+    const float toggle_width = ui.ToggleWidth();
     ui.TextLine(D2D1::RectF(left + 16.0f, y, left + half - toggle_width - 16.0f, y + 56.0f), label, TextStyle::kBody,
                 theme::kText);
     ui.Toggle(id, D2D1::RectF(left + half - 12.0f - toggle_width, y + 12.0f, left + half - 12.0f, y + 44.0f), value,
               label);
     return ui.EndCard(option_card, y + 56.0f - theme::kCardPadding);
   };
-  const float options_bottom = option(L"installer.desktop", x, L"Desktop icon", &installer_.desktop);
-  option(L"installer.startmenu", x + half + gap, L"Start Menu icon", &installer_.start_menu);
+  const float options_bottom = option(L"installer.desktop", x, T(L"Desktop icon"), &installer_.desktop);
+  option(L"installer.startmenu", x + half + gap, T(L"Start Menu icon"), &installer_.start_menu);
   return options_bottom;
 }
 
 float App::BuildInstallerCompletion(Ui& ui, float x, float y, float width) {
   y += 8.0f;
-  std::wstring text = kInstalledText;
-  if (!installer_.roblox_installed) text += std::wstring(L"\n\n") + kRobloxLaterText;
-  text += L"\n\nWhat would you like to do?";
+  std::wstring text = T(kInstalledText);
+  if (!installer_.roblox_installed) text += L"\n\n" + T(kRobloxLaterText);
+  text += L"\n\n" + T(L"What would you like to do?");
   const float height = ui.Text(x, y, width, text, TextStyle::kBody, theme::kText);
   ui.Label(D2D1::RectF(x, y, x + width, y + height), text);
   y += height + 16.0f;
 
   constexpr int kActionGroup = 9401;
-  const auto action = [&](const wchar_t* id, const wchar_t* title, const wchar_t* description,
+  const auto action = [&](const wchar_t* id, const std::wstring& title, const std::wstring& description,
                           InstallerAction next) {
     const D2D1_RECT_F rect = D2D1::RectF(x, y, x + width, y + 62.0f);
     ui.Fill(rect, theme::kCard, theme::kControlRadius);
@@ -296,10 +321,10 @@ float App::BuildInstallerCompletion(Ui& ui, float x, float y, float width) {
              theme::kTextSecondary);
     y += 62.0f + 8.0f;
   };
-  action(L"installer.settings", L"Configure Elixir’s settings", L"Tweak with all the features it has to offer",
+  action(L"installer.settings", T(L"Configure Elixir’s settings"), T(L"Tweak with all the features it has to offer"),
          InstallerAction::kSettings);
-  action(L"installer.launch", installer_.roblox_installed ? L"Launch Roblox" : L"Install and launch Roblox",
-         L"Will drop you into Roblox once everything’s done", InstallerAction::kLaunch);
+  action(L"installer.launch", installer_.roblox_installed ? T(L"Launch Roblox") : T(L"Install and launch Roblox"),
+         T(L"Will drop you into Roblox once everything’s done"), InstallerAction::kLaunch);
   return y - 8.0f;
 }
 
@@ -386,9 +411,9 @@ void App::InstallerNext() {
     overlay.status = 1;
     overlay.title = L"Elixir Installer";
     overlay.body = OwnFolderQuestion(suggestion);
-    overlay.actions = {{L"installer.own.yes", L"Yes", ButtonStyle::kStandard},
-                       {L"installer.own.no", L"No", ButtonStyle::kStandard},
-                       {L"overlay.close", L"Cancel", ButtonStyle::kStandard}};
+    overlay.actions = {{L"installer.own.yes", T(L"Yes"), ButtonStyle::kStandard},
+                       {L"installer.own.no", T(L"No"), ButtonStyle::kStandard},
+                       {L"overlay.close", T(L"Cancel"), ButtonStyle::kStandard}};
     ShowOverlay(std::move(overlay));
     return;
   }
@@ -424,7 +449,7 @@ void App::RunInstall() {
   request.start_menu_shortcut = installer_.start_menu;
   std::wstring error;
   if (!InstallElixir(request, options_.install_environment, &error)) {
-    installer_.error = error.empty() ? std::wstring(L"Elixir couldn’t be installed here.") : error;
+    installer_.error = error.empty() ? std::wstring(T(L"Elixir couldn’t be installed here.")) : error;
     Invalidate();
     return;
   }
@@ -448,9 +473,9 @@ bool App::ConfirmInstallerClose() {
   overlay.id = L"installer.cancel";
   overlay.status = 1;
   overlay.title = L"Elixir Installer";
-  overlay.body = L"Are you sure you want to cancel the installation?";
-  overlay.actions = {{L"installer.cancel.yes", L"Yes", ButtonStyle::kStandard},
-                     {L"overlay.close", L"No", ButtonStyle::kStandard}};
+  overlay.body = T(L"Are you sure you want to cancel the installation?");
+  overlay.actions = {{L"installer.cancel.yes", T(L"Yes"), ButtonStyle::kStandard},
+                     {L"overlay.close", T(L"No"), ButtonStyle::kStandard}};
   ShowOverlay(std::move(overlay));
   return false;
 }

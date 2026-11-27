@@ -9,6 +9,7 @@
 
 #include "resource.h"
 #include "ui/theme.h"
+#include "core/i18n.h"
 
 namespace elixir::launcher::ui {
 
@@ -33,6 +34,7 @@ constexpr float kHoverMs = 83.0f;
 constexpr float kPressMs = 83.0f;
 constexpr float kToggleMs = 167.0f;
 constexpr float kSelectMs = 167.0f;
+constexpr float kThumbMs = 120.0f;
 
 D2D1_COLOR_F Mix(const D2D1_COLOR_F& a, const D2D1_COLOR_F& b, float t) {
   return D2D1::ColorF(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, a.a + (b.a - a.a) * t);
@@ -281,11 +283,12 @@ void Ui::LogText(std::wstring_view text, const D2D1_RECT_F& box) {
 }
 
 void Ui::TextLine(const D2D1_RECT_F& rect, std::wstring_view text, TextStyle style, const D2D1_COLOR_F& color,
-                  Align align) {
+                  Align align, float min_scale) {
   if (!painting() || text.empty()) return;
   const float width = rect.right - rect.left;
   if (width <= 1.0f || Culled(rect)) return;
-  IDWriteTextLayout* layout = renderer_->Layout(text, style, width, false, align, true);
+  IDWriteTextLayout* layout = min_scale < 1.0f ? renderer_->FittedLayout(text, style, width, align, min_scale)
+                                               : renderer_->Layout(text, style, width, false, align, true);
   if (layout == nullptr) return;
   DWRITE_TEXT_METRICS metrics{};
   layout->GetMetrics(&metrics);
@@ -293,7 +296,7 @@ void Ui::TextLine(const D2D1_RECT_F& rect, std::wstring_view text, TextStyle sty
   commands_.push_back(Command{Command::Type::kText, D2D1::RectF(rect.left, y, rect.right, y + metrics.height), color, {},
                               0, 0, ComPtr<IDWriteTextLayout>(layout)});
   if (layout_log_ != nullptr && !inert_) {
-    const float natural = TextWidth(text, style);
+    const float natural = TextWidth(text, style) * std::min(min_scale, 1.0f);
     const float shown = std::min(natural, width);
     const float left = align == Align::kCenter     ? rect.left + (width - shown) / 2.0f
                        : align == Align::kTrailing ? rect.right - shown
@@ -310,6 +313,11 @@ float Ui::TextWidth(std::wstring_view text, TextStyle style) {
 
 float Ui::TextHeight(std::wstring_view text, TextStyle style, float width) {
   return renderer_->Measure(text, style, width, true).height;
+}
+
+float Ui::ToggleWidth() {
+  const float label = std::max(TextWidth(T(L"On"), TextStyle::kBody), TextWidth(T(L"Off"), TextStyle::kBody));
+  return std::max(96.0f, std::ceil(label) + 56.0f);
 }
 
 void Ui::Glyph(float center_x, float center_y, wchar_t glyph_code, TextStyle style, const D2D1_COLOR_F& color) {
@@ -343,16 +351,20 @@ void Ui::AppIcon(const D2D1_RECT_F& rect) { Bitmap(rect, IDR_ELIXIR_ICON_PNG); }
 
 void Ui::Bitmap(const D2D1_RECT_F& rect, int resource_id) {
   if (!painting()) return;
-  Command command{Command::Type::kBitmap, rect, {}, {}, 0, 0, nullptr};
+  Command command{Command::Type::kBitmap, rect, D2D1::ColorF(0, 0, 0, 1.0f), {}, 0, 0, nullptr};
   command.bitmap_resource = resource_id;
   commands_.push_back(std::move(command));
 }
 
-void Ui::Image(const D2D1_RECT_F& rect, std::wstring_view path) {
-  if (!painting() || path.empty() || Culled(rect)) return;
-  Command command{Command::Type::kBitmap, rect, {}, {}, 0, 0, nullptr};
+float Ui::Image(const D2D1_RECT_F& rect, std::wstring_view path, bool fade_in) {
+  if (!painting() || path.empty()) return 0.0f;
+  const float shown = AnimateKeyed(L"image:", path, 1.0f, theme::kImageFadeMs,
+                                   fade_in ? 0.0f : std::numeric_limits<float>::quiet_NaN());
+  if (Culled(rect)) return shown;
+  Command command{Command::Type::kBitmap, rect, D2D1::ColorF(0, 0, 0, shown), {}, 0, 0, nullptr};
   command.bitmap_file = std::wstring(path);
   commands_.push_back(std::move(command));
+  return shown;
 }
 
 void Ui::Progress(const D2D1_RECT_F& rect, float fraction) {
@@ -361,7 +373,10 @@ void Ui::Progress(const D2D1_RECT_F& rect, float fraction) {
   Fill(rect, theme::White(0.12f), radius);
   const float width = rect.right - rect.left;
   if (fraction >= 0.0f) {
-    const float filled = std::clamp(fraction, 0.0f, 1.0f) * width;
+    const std::wstring place =
+        std::to_wstring(std::lround(rect.left)) + L"," + std::to_wstring(std::lround(rect.top + layer_dy_));
+    const float shown = AnimateKeyed(L"progress:", place, std::clamp(fraction, 0.0f, 1.0f), theme::kProgressMs);
+    const float filled = shown * width;
     if (filled > 0.5f) Fill(D2D1::RectF(rect.left, rect.top, rect.left + std::max(filled, 2 * radius), rect.bottom),
                             theme::kSelectionFill, radius);
     return;
@@ -449,7 +464,7 @@ bool Ui::Button(std::wstring_view id, const D2D1_RECT_F& rect, std::wstring_view
 }
 
 bool Ui::Nav(std::wstring_view id, const D2D1_RECT_F& rect, std::wstring_view label, bool selected,
-             std::wstring_view shortcut) {
+             std::wstring_view shortcut, bool draw_selection) {
   if (!painting()) return Hit(id) && interaction_->type == Interaction::Type::kActivate;
   if (ControlRecord* record = Record(id, ControlKind::kNav, rect, label, true)) {
     record->checked = selected;
@@ -461,7 +476,7 @@ bool Ui::Nav(std::wstring_view id, const D2D1_RECT_F& rect, std::wstring_view la
   const float d = AnimateKeyed(L"press:", id, hover && !selected && Pressed(id) ? 1.0f : 0.0f, kPressMs);
   const D2D1_COLOR_F hover_fill = Mix(theme::kNavHover, theme::kSubtlePressed, d);
   const D2D1_COLOR_F idle_fill = Mix(WithAlpha(hover_fill, 0.0f), hover_fill, h);
-  const D2D1_COLOR_F fill = Mix(idle_fill, theme::kNavSelected, sel);
+  const D2D1_COLOR_F fill = draw_selection ? Mix(idle_fill, theme::kNavSelected, sel) : idle_fill;
   if (fill.a > 0.0f) Fill(rect, fill, theme::kControlRadius);
   TextLine(D2D1::RectF(rect.left + 16.0f, rect.top, rect.right - 8.0f, rect.bottom), label, TextStyle::kBody,
            Mix(theme::kTextSecondary, theme::kText, sel));
@@ -479,7 +494,7 @@ bool Ui::Toggle(std::wstring_view id, const D2D1_RECT_F& rect, bool* value, std:
   }
   if (ControlRecord* record = Record(id, ControlKind::kToggle, rect, name, enabled)) {
     record->checked = *value;
-    record->value = *value ? L"On" : L"Off";
+    record->value = *value ? T(L"On") : T(L"Off");
   }
   if (Culled(Inflate(rect, 4.0f))) return false;
   const bool hover = enabled && Hovered(id);
@@ -503,7 +518,7 @@ bool Ui::Toggle(std::wstring_view id, const D2D1_RECT_F& rect, bool* value, std:
   const D2D1_COLOR_F knob_off = enabled ? theme::kTextSecondary : theme::kTextDisabled;
   Fill(D2D1::RectF(knob_x - knob_r, center_y - knob_r, knob_x + knob_r, center_y + knob_r), Mix(knob_off, knob_on, on),
        knob_r);
-  TextLine(D2D1::RectF(rect.left, rect.top, pill.left - 12.0f, rect.bottom), *value ? L"On" : L"Off",
+  TextLine(D2D1::RectF(rect.left, rect.top, pill.left - 12.0f, rect.bottom), *value ? T(L"On") : T(L"Off"),
            TextStyle::kBody, enabled ? theme::kText : theme::kTextDisabled, Align::kTrailing);
   FocusRing(id, pill, 10.0f);
   return false;
@@ -518,13 +533,15 @@ bool Ui::ComboBox(std::wstring_view id, const D2D1_RECT_F& rect, std::wstring_vi
   }
   if (Culled(Inflate(rect, 4.0f))) return false;
   const bool hover = enabled && Hovered(id);
-  const D2D1_COLOR_F fill = hover ? (Pressed(id) ? theme::kSubtlePressed : theme::kSubtleHover) : theme::kSubtleFill;
-  Fill(rect, fill, theme::kControlRadius);
+  const float h = AnimateKeyed(L"hover:", id, hover ? 1.0f : 0.0f, kHoverMs);
+  const float d = AnimateKeyed(L"press:", id, hover && Pressed(id) ? 1.0f : 0.0f, kPressMs);
+  const float open = AnimateKeyed(L"open:", id, expanded ? 1.0f : 0.0f, kSelectMs);
+  Fill(rect, States(theme::kSubtleFill, theme::kSubtleHover, theme::kSubtlePressed, h, d), theme::kControlRadius);
   Stroke(rect, theme::kControlBorder, theme::kControlRadius);
   TextLine(D2D1::RectF(rect.left + 12.0f, rect.top, rect.right - 36.0f, rect.bottom), value,
            TextStyle::kButton, enabled ? theme::kText : theme::kTextDisabled);
-  Glyph(rect.right - 16.0f, (rect.top + rect.bottom) / 2.0f, glyph::kChevronDown, TextStyle::kIconSmall,
-        enabled ? theme::Rgb(state_->control_accent_rgb) : theme::kTextDisabled);
+  Glyph(rect.right - 16.0f, (rect.top + rect.bottom) / 2.0f + 2.0f * std::max(d, open), glyph::kChevronDown,
+        TextStyle::kIconSmall, enabled ? theme::Rgb(state_->control_accent_rgb) : theme::kTextDisabled);
   FocusRing(id, rect, theme::kControlRadius);
   return false;
 }
@@ -533,9 +550,9 @@ bool Ui::ComboOption(std::wstring_view id, const D2D1_RECT_F& rect, std::wstring
   if (!painting()) return Hit(id) && interaction_->type == Interaction::Type::kActivate;
   if (ControlRecord* record = Record(id, ControlKind::kListItem, rect, label, true)) record->checked = selected;
   if (Culled(rect)) return false;
-  if (Hovered(id) || (Focused(id) && state_->focus_visible)) {
-    Fill(rect, theme::kNavSelected, theme::kControlRadius);
-  }
+  const float h = AnimateKeyed(L"hover:", id, Hovered(id) || (Focused(id) && state_->focus_visible) ? 1.0f : 0.0f,
+                               kHoverMs);
+  if (h > 0.0f) Fill(rect, WithAlpha(theme::kNavSelected, theme::kNavSelected.a * h), theme::kControlRadius);
   if (selected) {
     Glyph(rect.left + 15.0f, (rect.top + rect.bottom) / 2.0f, glyph::kCheck, TextStyle::kIcon,
           theme::Rgb(state_->control_accent_rgb));
@@ -550,9 +567,9 @@ bool Ui::MenuRow(std::wstring_view id, const D2D1_RECT_F& rect, std::wstring_vie
   if (!painting()) return Hit(id) && interaction_->type == Interaction::Type::kActivate;
   Record(id, ControlKind::kListItem, rect, name, true);
   if (Culled(rect)) return false;
-  if (Hovered(id) || (Focused(id) && state_->focus_visible)) {
-    Fill(rect, theme::kNavSelected, theme::kControlRadius);
-  }
+  const float h = AnimateKeyed(L"hover:", id, Hovered(id) || (Focused(id) && state_->focus_visible) ? 1.0f : 0.0f,
+                               kHoverMs);
+  if (h > 0.0f) Fill(rect, WithAlpha(theme::kNavSelected, theme::kNavSelected.a * h), theme::kControlRadius);
   FocusRing(id, Inflate(rect, -3.0f), theme::kControlRadius);
   return false;
 }
@@ -562,9 +579,14 @@ bool Ui::IconButton(std::wstring_view id, const D2D1_RECT_F& rect, wchar_t glyph
   Record(id, ControlKind::kButton, rect, name, true);
   if (Culled(Inflate(rect, 4.0f))) return false;
   const bool hover = Hovered(id);
-  if (hover) Fill(rect, Pressed(id) ? theme::kSubtlePressed : theme::kSubtleHover, theme::kControlRadius);
+  const float h = AnimateKeyed(L"hover:", id, hover ? 1.0f : 0.0f, kHoverMs);
+  const float d = AnimateKeyed(L"press:", id, hover && Pressed(id) ? 1.0f : 0.0f, kPressMs);
+  if (h > 0.0f) {
+    const D2D1_COLOR_F fill = Mix(theme::kSubtleHover, theme::kSubtlePressed, d);
+    Fill(rect, WithAlpha(fill, fill.a * h), theme::kControlRadius);
+  }
   Glyph((rect.left + rect.right) / 2.0f, (rect.top + rect.bottom) / 2.0f, glyph, TextStyle::kIconSmall,
-        hover ? theme::kText : theme::kTextSecondary);
+        Mix(theme::kTextSecondary, theme::kText, h));
   FocusRing(id, rect, theme::kControlRadius);
   return false;
 }
@@ -716,19 +738,25 @@ bool Ui::Slider(std::wstring_view id, const D2D1_RECT_F& rect, double* value, do
   }
   if (Culled(Inflate(rect, 12.0f))) return false;
   const float center_y = (rect.top + rect.bottom) / 2.0f;
-  const float fraction = static_cast<float>((*value - min) / (max - min));
+  const bool dragging = enabled && Pressed(id);
+  const float fraction = AnimateKeyed(L"slider:", id, static_cast<float>((*value - min) / (max - min)),
+                                      dragging ? 0.0f : kThumbMs);
   const float thumb_x = track_area.left + fraction * (track_area.right - track_area.left);
   const bool hover = enabled && (Hovered(id) || Pressed(id));
+  const float grown = AnimateKeyed(L"hover:", id, hover ? 1.0f : 0.0f, kHoverMs);
+  const float held = AnimateKeyed(L"press:", id, dragging ? 1.0f : 0.0f, kPressMs);
   const D2D1_RECT_F track =
       D2D1::RectF(track_area.left - radius, center_y - 2.0f, track_area.right + radius, center_y + 2.0f);
   Fill(Inflate(track, -1.0f), hover ? theme::kSliderTrackHover : theme::kSliderTrack, 1.0f);
   Stroke(track, theme::kSliderTrackBorder, 2.0f);
   Fill(D2D1::RectF(track.left + 2.0f, track.top, track.right - 2.0f, track.top + 1.0f), theme::kSliderTrackEdge);
-  const D2D1_RECT_F thumb = D2D1::RectF(thumb_x - radius, center_y - radius, thumb_x + radius, center_y + radius);
+  const float shown_radius = radius + 1.0f * grown - 2.0f * held;
+  const D2D1_RECT_F thumb = D2D1::RectF(thumb_x - shown_radius, center_y - shown_radius, thumb_x + shown_radius,
+                                        center_y + shown_radius);
   const D2D1_COLOR_F thumb_fill = enabled ? theme::Rgb(state_->control_accent_rgb) : theme::kTextDisabled;
-  Fill(thumb, thumb_fill, radius);
+  Fill(thumb, thumb_fill, shown_radius);
   if (enabled && RelativeLuminance(thumb_fill) + 0.05f < 3.0f * (RelativeLuminance(theme::kField) + 0.05f)) {
-    Stroke(thumb, theme::White(0.62f), radius, 1.0f);
+    Stroke(thumb, theme::White(0.62f), shown_radius, 1.0f);
   }
   if (value_width > 0.0f) {
     TextLine(D2D1::RectF(rect.right - value_width, rect.top, rect.right, rect.bottom), value_text, TextStyle::kBody,
@@ -748,7 +776,7 @@ bool Ui::CheckBox(std::wstring_view id, const D2D1_RECT_F& rect, bool* checked, 
   }
   if (ControlRecord* record = Record(id, ControlKind::kToggle, rect, name, enabled)) {
     record->checked = *checked;
-    record->value = *checked ? L"Checked" : L"Not checked";
+    record->value = *checked ? T(L"Checked") : T(L"Not checked");
   }
   const float on = Animate(Key(L"check:", id), *checked ? 1.0f : 0.0f, kToggleMs);
   const float h = Animate(Key(L"hover:", id), enabled && Hovered(id) ? 1.0f : 0.0f, kHoverMs);
@@ -788,12 +816,25 @@ bool Ui::TextField(std::wstring_view id, const D2D1_RECT_F& rect, std::wstring* 
   const bool editing = state_->editing == id;
   const bool hover = enabled && Hovered(id);
   const float h = AnimateKeyed(L"hover:", id, hover && !editing ? 1.0f : 0.0f, kHoverMs);
+  const float typing = AnimateKeyed(L"edit:", id, editing ? 1.0f : 0.0f, kSelectMs);
   Fill(rect, Mix(theme::kField, theme::Rgb(theme::kFieldRgb + 0x060606), h), 4.0f);
   Stroke(rect, theme::kFieldBorder, 4.0f);
+  const auto focus_line = [&] {
+    const float center = (rect.left + rect.right) / 2.0f;
+    const float half = ((rect.right - rect.left) / 2.0f - 1.0f) * typing;
+    if (half >= 1.0f) {
+      Fill(D2D1::RectF(center - half, rect.bottom - 2.0f, center + half, rect.bottom), theme::kFocusRing, 1.0f);
+    }
+  };
   if (editing) {
-    Fill(D2D1::RectF(rect.left + 1.0f, rect.bottom - 2.0f, rect.right - 1.0f, rect.bottom), theme::kFocusRing, 1.0f);
+    if (typing < 1.0f) {
+      Fill(D2D1::RectF(rect.left + 2.0f, rect.bottom - 1.0f, rect.right - 2.0f, rect.bottom), theme::kFieldUnderline,
+           0.0f);
+    }
+    focus_line();
   } else {
     Fill(D2D1::RectF(rect.left + 2.0f, rect.bottom - 1.0f, rect.right - 2.0f, rect.bottom), theme::kFieldUnderline, 0.0f);
+    if (typing > 0.0f) focus_line();
     const D2D1_RECT_F inner = D2D1::RectF(rect.left + 11.0f, rect.top, rect.right - 10.0f, rect.bottom);
     if (text->empty()) {
       TextLine(inner, placeholder, TextStyle::kBody, theme::kTextTertiary);
@@ -861,12 +902,14 @@ bool Ui::Radio(std::wstring_view id, const D2D1_RECT_F& rect, bool selected, std
   if (h > 0.0f) Fill(rect, WithAlpha(theme::kNavHover, theme::kNavHover.a * h), theme::kControlRadius);
   const float cx = rect.left + 20.0f;
   const float cy = (rect.top + rect.bottom) / 2.0f;
-  if (selected) {
+  const float sel = AnimateKeyed(L"radio:", id, selected ? 1.0f : 0.0f, kToggleMs);
+  const D2D1_RECT_F ring = D2D1::RectF(cx - 9.0f, cy - 9.0f, cx + 9.0f, cy + 9.0f);
+  if (sel < 1.0f) Stroke(ring, theme::White((0.6f + 0.2f * h) * (1.0f - sel)), 9.0f, 1.0f);
+  if (sel > 0.0f) {
     const D2D1_COLOR_F accent = theme::Rgb(state_->control_accent_rgb);
-    Fill(D2D1::RectF(cx - 9.0f, cy - 9.0f, cx + 9.0f, cy + 9.0f), accent, 9.0f);
-    Fill(D2D1::RectF(cx - 4.0f, cy - 4.0f, cx + 4.0f, cy + 4.0f), ContrastingMarker(accent), 4.0f);
-  } else {
-    Stroke(D2D1::RectF(cx - 9.0f, cy - 9.0f, cx + 9.0f, cy + 9.0f), theme::White(0.6f + 0.2f * h), 9.0f, 1.0f);
+    Fill(ring, WithAlpha(accent, sel), 9.0f);
+    const float dot = 4.0f * sel;
+    Fill(D2D1::RectF(cx - dot, cy - dot, cx + dot, cy + dot), WithAlpha(ContrastingMarker(accent), sel), dot);
   }
   const float label_width = std::min(TextWidth(label, TextStyle::kBody) + 2.0f, rect.right - cx - 24.0f);
   TextLine(D2D1::RectF(cx + 20.0f, rect.top, cx + 20.0f + label_width, rect.bottom), label, TextStyle::kBody,
@@ -1026,8 +1069,8 @@ void Ui::Flush() {
                                       ? renderer_->ResourceBitmap(command.bitmap_resource, width_px, height_px)
                                       : renderer_->FileBitmap(command.bitmap_file, width_px, height_px)) {
           target->DrawBitmap(bitmap,
-                             D2D1::RectF(left, top, left + width_px / scale, top + height_px / scale), 1.0f,
-                             D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+                             D2D1::RectF(left, top, left + width_px / scale, top + height_px / scale),
+                             std::clamp(command.color.a, 0.0f, 1.0f), D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
         }
         break;
       }

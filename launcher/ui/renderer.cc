@@ -11,6 +11,7 @@
 #include <cwchar>
 #include <functional>
 
+#include "core/i18n.h"
 #include "resource.h"
 
 namespace elixir::launcher::ui {
@@ -102,22 +103,67 @@ bool Renderer::Initialize() {
   display_family_ = PickFamily({L"Segoe UI Variable Display", L"Segoe UI"});
   icon_family_ = PickFamily({L"Segoe Fluent Icons", L"Segoe MDL2 Assets"});
   mono_family_ = PickFamily({L"Cascadia Mono", L"Consolas"});
-  const std::wstring* families[] = {&text_family_, &display_family_, &icon_family_, &mono_family_};
-  for (int i = 0; i < static_cast<int>(TextStyle::kCount); ++i) {
-    const FormatSpec& spec = kSpecs[i];
-    if (FAILED(dwrite_->CreateTextFormat(families[spec.family]->c_str(), nullptr, spec.weight,
-                                         DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, spec.size, L"en-us",
-                                         &formats_[i]))) {
-      return false;
-    }
-    formats_[i]->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
-    dwrite_->CreateEllipsisTrimmingSign(formats_[i].Get(), &ellipsis_sign_[i]);
-  }
+  locale_ = CurrentLanguageTag();
+  right_to_left_ = CurrentLanguageIsRightToLeft();
+  language_generation_ = LanguageGeneration();
+  if (!CreateFormats()) return false;
   bitmap_sources_[IDR_ELIXIR_LOGO_PNG] = LoadPngResource(wic_.Get(), IDR_ELIXIR_LOGO_PNG);
   return true;
 }
 
+bool Renderer::CreateFormats() {
+  const std::wstring* families[] = {&text_family_, &display_family_, &icon_family_, &mono_family_};
+  for (int i = 0; i < static_cast<int>(TextStyle::kCount); ++i) {
+    const FormatSpec& spec = kSpecs[i];
+    ComPtr<IDWriteTextFormat> format;
+    if (FAILED(dwrite_->CreateTextFormat(families[spec.family]->c_str(), nullptr, spec.weight,
+                                         DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, spec.size,
+                                         locale_.c_str(), &format))) {
+      return false;
+    }
+    format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+    formats_[i] = format;
+    ellipsis_sign_[i].Reset();
+    dwrite_->CreateEllipsisTrimmingSign(formats_[i].Get(), &ellipsis_sign_[i]);
+  }
+  layouts_.clear();
+  return true;
+}
+
+bool Renderer::SyncLanguage() {
+  const std::uint64_t generation = LanguageGeneration();
+  if (generation == language_generation_ || !dwrite_) return false;
+  language_generation_ = generation;
+  const std::wstring locale = CurrentLanguageTag();
+  const bool right_to_left = CurrentLanguageIsRightToLeft();
+  if (locale == locale_ && right_to_left == right_to_left_) return false;
+  const std::wstring previous = locale_;
+  locale_ = locale;
+  right_to_left_ = right_to_left;
+  if (!CreateFormats()) {
+    locale_ = previous;
+    CreateFormats();
+  }
+  return true;
+}
+
+void Renderer::ApplyDirection(IDWriteTextLayout* layout, std::wstring_view text, Align align) const {
+  DWRITE_TEXT_ALIGNMENT alignment = align == Align::kCenter     ? DWRITE_TEXT_ALIGNMENT_CENTER
+                                    : align == Align::kTrailing ? DWRITE_TEXT_ALIGNMENT_TRAILING
+                                                                : DWRITE_TEXT_ALIGNMENT_LEADING;
+  if (right_to_left_ && ReadsRightToLeft(text)) {
+    layout->SetReadingDirection(DWRITE_READING_DIRECTION_RIGHT_TO_LEFT);
+    if (alignment == DWRITE_TEXT_ALIGNMENT_LEADING) {
+      alignment = DWRITE_TEXT_ALIGNMENT_TRAILING;
+    } else if (alignment == DWRITE_TEXT_ALIGNMENT_TRAILING) {
+      alignment = DWRITE_TEXT_ALIGNMENT_LEADING;
+    }
+  }
+  layout->SetTextAlignment(alignment);
+}
+
 bool Renderer::EnsureTarget(HWND hwnd, UINT dpi) {
+  SyncLanguage();
   if (target_) return true;
   RECT client{};
   GetClientRect(hwnd, &client);
@@ -163,6 +209,7 @@ void Renderer::DiscardTarget() {
 }
 
 void Renderer::BeginOffscreen(ID2D1RenderTarget* target, float dpi) {
+  SyncLanguage();
   if (!offscreen_) window_dpi_ = dpi_;
   offscreen_ = target;
   dpi_ = dpi;
@@ -238,13 +285,53 @@ IDWriteTextLayout* Renderer::Layout(std::wstring_view text, TextStyle style, flo
     return nullptr;
   }
   layout->SetWordWrapping(wrap ? DWRITE_WORD_WRAPPING_WRAP : DWRITE_WORD_WRAPPING_NO_WRAP);
-  layout->SetTextAlignment(align == Align::kCenter     ? DWRITE_TEXT_ALIGNMENT_CENTER
-                           : align == Align::kTrailing ? DWRITE_TEXT_ALIGNMENT_TRAILING
-                                                       : DWRITE_TEXT_ALIGNMENT_LEADING);
+  ApplyDirection(layout.Get(), text, align);
   if (ellipsis) {
     DWRITE_TRIMMING trimming{DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0};
     layout->SetTrimming(&trimming, ellipsis_sign_[static_cast<int>(style)].Get());
   }
+  LayoutEntry& entry = layouts_[hash];
+  entry.text.assign(text);
+  entry.params = params;
+  entry.width = half_dips;
+  entry.layout = std::move(layout);
+  return entry.layout.Get();
+}
+
+IDWriteTextLayout* Renderer::FittedLayout(std::wstring_view text, TextStyle style, float max_width, Align align,
+                                          float min_scale) {
+  if (max_width <= 0.0f || min_scale >= 1.0f || text.empty()) return Layout(text, style, max_width, false, align, true);
+  const float natural = Measure(text, style, 0.0f, false).width;
+  if (natural <= max_width) return Layout(text, style, max_width, false, align, true);
+  const float scale = std::max(min_scale, max_width / natural * 0.995f);
+  const std::int32_t half_dips = static_cast<std::int32_t>(std::lround(max_width * 2.0f));
+  const std::uint32_t params = static_cast<std::uint32_t>(style) | (static_cast<std::uint32_t>(align) << 9) | 0x3000u |
+                               (static_cast<std::uint32_t>(std::lround(min_scale * 1000.0f)) << 14);
+  std::uint64_t hash = 1469598103934665603ull;
+  const auto mix = [&hash](std::uint64_t value) {
+    hash ^= value;
+    hash *= 1099511628211ull;
+  };
+  mix(params);
+  mix(static_cast<std::uint32_t>(half_dips));
+  for (const wchar_t c : text) mix(static_cast<std::uint16_t>(c));
+  auto found = layouts_.find(hash);
+  if (found != layouts_.end() && found->second.params == params && found->second.width == half_dips &&
+      found->second.text == text) {
+    return found->second.layout.Get();
+  }
+  if (layouts_.size() > 3000) layouts_.clear();
+  ComPtr<IDWriteTextLayout> layout;
+  if (FAILED(dwrite_->CreateTextLayout(text.data(), static_cast<UINT32>(text.size()), Format(style), max_width,
+                                       100000.0f, &layout))) {
+    return nullptr;
+  }
+  layout->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+  ApplyDirection(layout.Get(), text, align);
+  layout->SetFontSize(kSpecs[static_cast<int>(style)].size * scale,
+                      DWRITE_TEXT_RANGE{0, static_cast<UINT32>(text.size())});
+  DWRITE_TRIMMING trimming{DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0};
+  layout->SetTrimming(&trimming, ellipsis_sign_[static_cast<int>(style)].Get());
   LayoutEntry& entry = layouts_[hash];
   entry.text.assign(text);
   entry.params = params;

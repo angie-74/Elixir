@@ -777,15 +777,20 @@ int RunElixirRuntime(const std::vector<std::string>& arguments) {
       present_policy_is_default = true;
     }
   }
-  const float render_scale =
-      static_cast<float>(options.resolution_scale.value_or(config.launcher.resolution_scale));
-  const bool renders_smaller = RendersSmaller(render_scale) && !config.config.headless();
+  const RenderScale render_scale = Normalized(
+      RenderScale{static_cast<float>(options.resolution_scale.value_or(config.launcher.resolution_scale)),
+                  static_cast<float>(1.0 - options.stretch.value_or(config.launcher.stretch))});
+  const bool renders_smaller = render_scale.smaller() && !config.config.headless();
 #if defined(ELIXIR_RUNTIME_HAS_VULKAN)
   vulkan::SetPresentStretchWanted(renders_smaller);
 #endif
-  if (renders_smaller) {
-    Log("resolution scale: games render at " + std::to_string(static_cast<int>(render_scale * 100.0f + 0.5f)) +
+  if (renders_smaller && RendersSmaller(render_scale.size)) {
+    Log("resolution scale: games render at " + std::to_string(static_cast<int>(render_scale.size * 100.0f + 0.5f)) +
         "% of the window's size; Roblox's own pages stay at the window's size");
+  }
+  if (renders_smaller && RendersSmaller(render_scale.width)) {
+    Log("stretch: games render " + std::to_string(static_cast<int>((1.0f - render_scale.width) * 100.0f + 0.5f)) +
+        "% narrower and are stretched to the window's width; Roblox's own pages are not stretched");
   }
   for (const std::string& area : options.trace) {
     if (area == "jni") {
@@ -817,6 +822,7 @@ int RunElixirRuntime(const std::vector<std::string>& arguments) {
   sign_in_options.http_client = std::make_shared<WinHttpClient>();
   sign_in_options.log = [](std::string_view line) { Log(line); };
   sign_in_options.store = session_store;
+  sign_in_options.account_file = paths.auth_root() / L"roblox-account.json";
   sign_in_options.accounts = std::make_shared<AccountBook>(
       options.accounts_dir.empty() ? paths.auth_root() / L"accounts" : Absolute(options.accounts_dir));
   const auto account_use = std::make_shared<AccountUse>();
@@ -987,6 +993,7 @@ int RunElixirRuntime(const std::vector<std::string>& arguments) {
     if (renders_smaller && mr::ProcessEnvironment().GetOr("ELIXIR_TEST_SCALE_STARTUP_SURFACE", "") == "1") {
       android::SetNativeWindowRenderScale(static_cast<ANativeWindow*>(game.native_window()), render_scale);
       startup.surface_scale = render_scale;
+      mocktail::platform::SurfaceHorizontalScale().store(render_scale.stretch(), std::memory_order_relaxed);
       Log("resolution scale: ELIXIR_TEST_SCALE_STARTUP_SURFACE is set, so Roblox's start-up surface is smaller too");
     }
 #endif
@@ -1010,7 +1017,7 @@ int RunElixirRuntime(const std::vector<std::string>& arguments) {
     ExperienceSessionOptions experience_options;
     experience_options.asset_folder_path = startup.asset_path;
     experience_options.dpi_scale = geometry.dpi_scale;
-    experience_options.game_render_scale = renders_smaller ? render_scale : 1.0f;
+    experience_options.game_render_scale = renders_smaller ? render_scale : RenderScale{};
     experience_options.touch_enabled = input.touch_enabled;
     experience_options.mouse_enabled = input.mouse_enabled;
     experience_options.keyboard_enabled = input.keyboard_enabled;

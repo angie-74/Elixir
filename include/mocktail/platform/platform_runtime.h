@@ -2,6 +2,7 @@
 #ifndef MOCKTAIL_PLATFORM_PLATFORM_RUNTIME_H_
 #define MOCKTAIL_PLATFORM_PLATFORM_RUNTIME_H_
 
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <string>
@@ -56,6 +57,11 @@ struct NativeWindowDescriptor {
 
 struct QuitEvent {};
 
+inline std::atomic<float>& SurfaceHorizontalScale() {
+  static std::atomic<float> scale{1.0F};
+  return scale;
+}
+
 struct SurfaceCoordinateTransform {
   int32_t logical_width = 0;
   int32_t logical_height = 0;
@@ -69,8 +75,15 @@ struct SurfaceCoordinateTransform {
            density_scale > 0.0F;
   }
 
+  static float horizontal_scale() {
+    const float scale = SurfaceHorizontalScale().load(std::memory_order_relaxed);
+    return std::isfinite(scale) && scale > 0.0F && scale < 1.0F ? scale : 1.0F;
+  }
+
   float guest_width() const {
-    return valid() ? static_cast<float>(pixel_width) / density_scale : 0.0F;
+    return valid() ? static_cast<float>(pixel_width) / density_scale *
+                         horizontal_scale()
+                   : 0.0F;
   }
   float guest_height() const {
     return valid() ? static_cast<float>(pixel_height) / density_scale : 0.0F;
@@ -84,8 +97,14 @@ struct SurfaceCoordinateTransform {
 
   float HostLogicalToGuestX(float coordinate) const {
     return valid() ? coordinate * static_cast<float>(pixel_width) /
-                         static_cast<float>(logical_width) / density_scale
+                         static_cast<float>(logical_width) / density_scale *
+                         horizontal_scale()
                    : coordinate;
+  }
+  float HostLogicalDeltaToGuestX(float delta) const {
+    return valid() ? delta * static_cast<float>(pixel_width) /
+                         static_cast<float>(logical_width) / density_scale
+                   : delta;
   }
   float HostLogicalToGuestY(float coordinate) const {
     return valid() ? coordinate * static_cast<float>(pixel_height) /
@@ -95,7 +114,7 @@ struct SurfaceCoordinateTransform {
   float GuestToHostLogicalX(float coordinate) const {
     return valid() ? coordinate * density_scale *
                          static_cast<float>(logical_width) /
-                         static_cast<float>(pixel_width)
+                         static_cast<float>(pixel_width) / horizontal_scale()
                    : coordinate;
   }
   float GuestToHostLogicalY(float coordinate) const {

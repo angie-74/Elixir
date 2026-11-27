@@ -42,6 +42,7 @@ bool IsAndroidPackageName(std::string_view name) {
 namespace {
 
 bool IsValidResolutionScale(double scale) { return scale >= 0.25 && scale <= 1.0; }
+bool IsValidStretch(double stretch) { return stretch >= 0.0 && stretch <= 0.5; }
 
 bool ParseInt64(std::string_view text, std::int64_t* value) {
   if (text.empty() || text.size() > 19) return false;
@@ -173,6 +174,17 @@ const std::vector<OptionSpec>& Options() {
            return "expected a scale from 0.25 to 1.00, got " + Quoted(v);
          }
          o->resolution_scale = parsed;
+         return {};
+       }},
+      {"--stretch", true,
+       [](LaunchOptions* o, const std::string& v) -> std::string {
+         errno = 0;
+         char* end = nullptr;
+         const double parsed = std::strtod(v.c_str(), &end);
+         if (v.empty() || end != v.c_str() + v.size() || errno != 0 || !IsValidStretch(parsed)) {
+           return "expected a stretch from 0.00 to 0.50, got " + Quoted(v);
+         }
+         o->stretch = parsed;
          return {};
        }},
       {"--mods-dir", true, [](LaunchOptions* o, const std::string& v) { return PathOption(&o->mods_dir, v); }},
@@ -364,7 +376,7 @@ std::string RuntimeUsage() {
            "\n"
            "Settings (default: config.json):\n"
            "  --renderer vulkan  --present-mode fifo|mailbox|immediate  --frame-rate-cap <fps>\n"
-           "  --resolution-scale <0.25-1.00>  --controller on|off\n"
+           "  --resolution-scale <0.25-1.00>  --stretch <0.00-0.50>  --controller on|off\n"
            "  (no frame-rate cap or window mode: Roblox's own settings decide both)\n"
            "  --audio-device default|<endpoint id>\n"
            "  --audio-input-device default|disabled|<capture endpoint id>\n"
@@ -421,6 +433,12 @@ std::vector<std::string> FormatRuntimeArguments(const LaunchOptions& options) {
     const double value = *options.resolution_scale;
     std::snprintf(scale, sizeof(scale), "%.2f", IsValidResolutionScale(value) ? value : 1.0);
     add("--resolution-scale", scale);
+  }
+  if (options.stretch) {
+    char stretch[32];
+    const double value = *options.stretch;
+    std::snprintf(stretch, sizeof(stretch), "%.2f", IsValidStretch(value) ? value : 0.0);
+    add("--stretch", stretch);
   }
   if (options.controller) add("--controller", on_off(*options.controller));
   if (options.user_fflags) add("--user-fflags", on_off(*options.user_fflags));

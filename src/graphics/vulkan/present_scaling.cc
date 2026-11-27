@@ -7,8 +7,6 @@
 #include <cstdint>
 #include <cstring>
 
-#include "graphics/render_scale.h"
-
 namespace elixir::vulkan {
 namespace {
 
@@ -89,14 +87,14 @@ VkResult QueryPresentScaling(PFN_vkGetPhysicalDeviceSurfaceCapabilities2KHR quer
   return VK_SUCCESS;
 }
 
-void ScaleSurfaceCapabilities(float render_scale, VkSurfaceCapabilitiesKHR* capabilities) {
-  if (capabilities == nullptr || !RendersSmaller(render_scale)) return;
+void ScaleSurfaceCapabilities(const RenderScale& render_scale, VkSurfaceCapabilitiesKHR* capabilities) {
+  if (capabilities == nullptr || !render_scale.smaller()) return;
   VkExtent2D& current = capabilities->currentExtent;
   if (current.width == UINT32_MAX || current.height == UINT32_MAX || current.width == 0 || current.height == 0) {
     return;
   }
-  current.width = static_cast<std::uint32_t>(ScaledExtent(current.width, render_scale));
-  current.height = static_cast<std::uint32_t>(ScaledExtent(current.height, render_scale));
+  current.width = static_cast<std::uint32_t>(ScaledWidth(current.width, render_scale));
+  current.height = static_cast<std::uint32_t>(ScaledHeight(current.height, render_scale));
   capabilities->minImageExtent.width = std::min(capabilities->minImageExtent.width, current.width);
   capabilities->minImageExtent.height = std::min(capabilities->minImageExtent.height, current.height);
   capabilities->maxImageExtent.width = std::max(capabilities->maxImageExtent.width, current.width);

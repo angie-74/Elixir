@@ -13,6 +13,7 @@
 #include "core/config.h"
 #include "core/sha256.h"
 #include "core/util.h"
+#include "core/i18n.h"
 
 #ifndef ELIXIR_VERSION
 #define ELIXIR_VERSION "0.0.0"
@@ -22,12 +23,12 @@ namespace elixir::launcher {
 
 namespace {
 
-constexpr wchar_t kCannotConnect[] = L"Couldn’t connect. Check your internet connection and try again.";
-constexpr wchar_t kInterrupted[] = L"The download was interrupted. Try again.";
+constexpr wchar_t kCannotConnect[] = ELIXIR_TR(L"Couldn’t connect. Check your internet connection and try again.");
+constexpr wchar_t kInterrupted[] = ELIXIR_TR(L"The download was interrupted. Try again.");
 
-std::wstring NetworkError(DWORD code, const wchar_t* fallback) {
+std::wstring NetworkError(DWORD code, const std::wstring& fallback) {
   const std::wstring cause = ErrorCause(code);
-  return cause.empty() ? std::wstring(fallback) : cause + L" Try again.";
+  return cause.empty() ? fallback : TF(L"{0} Try again.", cause);
 }
 
 struct WinHttpHandle {
@@ -47,7 +48,7 @@ HttpResult Fetch(const std::wstring& url, std::uint64_t max_bytes, const ChunkSi
                  const ProgressCallback& progress, const std::atomic<bool>* cancel) {
   HttpResult result;
   if (!IsHttpsUrl(WideToUtf8(url))) {
-    result.error = L"The update link must start with https://.";
+    result.error = T(L"The update link must start with https://.");
     return result;
   }
   URL_COMPONENTS parts{};
@@ -57,11 +58,11 @@ HttpResult Fetch(const std::wstring& url, std::uint64_t max_bytes, const ChunkSi
   parts.dwUrlPathLength = static_cast<DWORD>(-1);
   parts.dwExtraInfoLength = static_cast<DWORD>(-1);
   if (!WinHttpCrackUrl(url.c_str(), static_cast<DWORD>(url.size()), 0, &parts)) {
-    result.error = L"The update link isn’t valid.";
+    result.error = T(L"The update link isn’t valid.");
     return result;
   }
   if (parts.nScheme != INTERNET_SCHEME_HTTPS) {
-    result.error = L"The update link must start with https://.";
+    result.error = T(L"The update link must start with https://.");
     return result;
   }
   const std::wstring host(parts.lpszHostName, parts.dwHostNameLength);
@@ -77,7 +78,7 @@ HttpResult Fetch(const std::wstring& url, std::uint64_t max_bytes, const ChunkSi
                                  WINHTTP_NO_PROXY_BYPASS, 0);
   }
   if (session.handle == nullptr) {
-    result.error = NetworkError(GetLastError(), kCannotConnect);
+    result.error = NetworkError(GetLastError(), T(kCannotConnect));
     return result;
   }
   DWORD protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2 | WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3;
@@ -88,20 +89,20 @@ HttpResult Fetch(const std::wstring& url, std::uint64_t max_bytes, const ChunkSi
   WinHttpSetTimeouts(session.handle, 15000, 15000, 30000, 60000);
   WinHttpHandle connection(WinHttpConnect(session.handle, host.c_str(), parts.nPort, 0));
   if (connection.handle == nullptr) {
-    result.error = NetworkError(GetLastError(), kCannotConnect);
+    result.error = NetworkError(GetLastError(), T(kCannotConnect));
     return result;
   }
   WinHttpHandle request(WinHttpOpenRequest(connection.handle, L"GET", path.c_str(), nullptr, WINHTTP_NO_REFERER,
                                            WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE));
   if (request.handle == nullptr) {
-    result.error = NetworkError(GetLastError(), kCannotConnect);
+    result.error = NetworkError(GetLastError(), T(kCannotConnect));
     return result;
   }
   DWORD redirect_policy = WINHTTP_OPTION_REDIRECT_POLICY_DISALLOW_HTTPS_TO_HTTP;
   WinHttpSetOption(request.handle, WINHTTP_OPTION_REDIRECT_POLICY, &redirect_policy, sizeof(redirect_policy));
   if (!WinHttpSendRequest(request.handle, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
       !WinHttpReceiveResponse(request.handle, nullptr)) {
-    result.error = NetworkError(GetLastError(), kCannotConnect);
+    result.error = NetworkError(GetLastError(), T(kCannotConnect));
     return result;
   }
   DWORD status = 0;
@@ -110,7 +111,7 @@ HttpResult Fetch(const std::wstring& url, std::uint64_t max_bytes, const ChunkSi
                       WINHTTP_HEADER_NAME_BY_INDEX, &status, &status_size, WINHTTP_NO_HEADER_INDEX);
   result.status = status;
   if (status != 200) {
-    result.error = L"The update isn’t available right now. Try again later.";
+    result.error = T(L"The update isn’t available right now. Try again later.");
     return result;
   }
   std::uint64_t total = 0;
@@ -121,7 +122,7 @@ HttpResult Fetch(const std::wstring& url, std::uint64_t max_bytes, const ChunkSi
     total = _wcstoui64(length_text, nullptr, 10);
   }
   if (total > max_bytes) {
-    result.error = L"The update is too large.";
+    result.error = T(L"The update is too large.");
     return result;
   }
   std::vector<char> buffer(64 * 1024);
@@ -133,7 +134,7 @@ HttpResult Fetch(const std::wstring& url, std::uint64_t max_bytes, const ChunkSi
     }
     DWORD available = 0;
     if (!WinHttpQueryDataAvailable(request.handle, &available)) {
-      result.error = NetworkError(GetLastError(), kInterrupted);
+      result.error = NetworkError(GetLastError(), T(kInterrupted));
       return result;
     }
     if (available == 0) break;
@@ -141,17 +142,17 @@ HttpResult Fetch(const std::wstring& url, std::uint64_t max_bytes, const ChunkSi
       const DWORD want = available < buffer.size() ? available : static_cast<DWORD>(buffer.size());
       DWORD read = 0;
       if (!WinHttpReadData(request.handle, buffer.data(), want, &read)) {
-        result.error = NetworkError(GetLastError(), kInterrupted);
+        result.error = NetworkError(GetLastError(), T(kInterrupted));
         return result;
       }
       if (read == 0) break;
       done += read;
       if (done > max_bytes) {
-        result.error = L"The update is too large.";
+        result.error = T(L"The update is too large.");
         return result;
       }
       if (!sink(buffer.data(), read)) {
-        result.error = L"The update couldn’t be saved.";
+        result.error = T(L"The update couldn’t be saved.");
         return result;
       }
       available -= read;
@@ -159,7 +160,7 @@ HttpResult Fetch(const std::wstring& url, std::uint64_t max_bytes, const ChunkSi
     }
   }
   if (total != 0 && done != total) {
-    result.error = kInterrupted;
+    result.error = T(kInterrupted);
     return result;
   }
   result.ok = true;
@@ -282,18 +283,18 @@ bool VerifyAndPromote(const std::wstring& source, std::string_view expected_sha2
   std::wstring hash_error;
   if (!Sha256File(source, &actual, &hash_error)) {
     DeleteFileW(source.c_str());
-    if (error) *error = L"The update couldn’t be checked. Try again.";
+    if (error) *error = T(L"The update couldn’t be checked. Try again.");
     return false;
   }
   if (measured != nullptr) *measured = actual;
   const std::string expected = NormalizeSha256(expected_sha256);
   if (!Sha256Equal(actual, expected)) {
     DeleteFileW(source.c_str());
-    if (error) *error = L"The update was damaged during download. Try again.";
+    if (error) *error = T(L"The update was damaged during download. Try again.");
     return false;
   }
   if (!MoveFileExW(source.c_str(), destination.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-    if (error) *error = WithErrorCause(L"The update couldn’t be saved.", GetLastError());
+    if (error) *error = WithErrorCause(T(L"The update couldn’t be saved."), GetLastError());
     DeleteFileW(source.c_str());
     return false;
   }
@@ -304,7 +305,7 @@ StagedUpdate DownloadAndStage(const UpdateManifest& manifest, const std::wstring
                               const ProgressCallback& progress, const std::atomic<bool>* cancel) {
   StagedUpdate staged;
   if (!IsHttpsUrl(manifest.url) || !IsSha256Hex(manifest.sha256)) {
-    staged.error = L"The update information is incomplete.";
+    staged.error = T(L"The update information is incomplete.");
     return staged;
   }
   const std::wstring directory =
@@ -314,7 +315,7 @@ StagedUpdate DownloadAndStage(const UpdateManifest& manifest, const std::wstring
   const std::wstring part_path = final_path + L".part";
   HANDLE file = CreateFileW(part_path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (file == INVALID_HANDLE_VALUE) {
-    staged.error = WithErrorCause(L"The update couldn’t be saved.", GetLastError());
+    staged.error = WithErrorCause(T(L"The update couldn’t be saved."), GetLastError());
     return staged;
   }
   std::wstring write_error;

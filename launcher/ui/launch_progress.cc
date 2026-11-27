@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "core/diagnostics.h"
+#include "core/i18n.h"
 #include "resource.h"
 #include "ui/theme.h"
 
@@ -309,7 +310,7 @@ void LaunchProgress::Build(Ui& ui, float width, float height) {
   ui.Label(D2D1::RectF(left, message_top, right, message_top + message_height), view_.message);
   ui.Progress(D2D1::RectF(left, bar_top, right, bar_top + 4.0f), view_.progress);
   cancel_ = D2D1::RectF(center - 60.0f, button_top, center + 60.0f, button_top + button_height);
-  ui.Button(kCancelId, cancel_, L"Cancel", ButtonStyle::kStandard, view_.cancel_enabled);
+  ui.Button(kCancelId, cancel_, T(L"Cancel"), ButtonStyle::kStandard, view_.cancel_enabled);
 }
 
 bool LaunchProgress::OverCancel(POINT client) const {

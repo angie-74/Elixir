@@ -19,6 +19,7 @@
 #include "core/shortcuts.h"
 #include "core/update.h"
 #include "core/util.h"
+#include "core/i18n.h"
 #include "platform/windows/app_user_model_id.h"
 
 namespace elixir::launcher {
@@ -26,14 +27,14 @@ namespace elixir::launcher {
 namespace {
 
 constexpr wchar_t kCannotInstallHere[] =
-    L"Elixir cannot be installed here. Please choose a different location, or resort to using the default location "
-    L"by clicking the reset button.";
+    ELIXIR_TR(L"Elixir cannot be installed here. Please choose a different location, or resort to using the default location "
+    L"by clicking the reset button.");
 constexpr wchar_t kNoWriteAccess[] =
-    L"Elixir does not have write access to the install location you've selected. Please choose another location.";
+    ELIXIR_TR(L"Elixir does not have write access to the install location you've selected. Please choose another location.");
 constexpr wchar_t kCannotOverwrite[] =
-    L"Elixir has been installed to this location before and is still present, however the installer cannot overwrite "
+    ELIXIR_TR(L"Elixir has been installed to this location before and is still present, however the installer cannot overwrite "
     L"the old executable.\n\nPlease manually delete Elixir.exe from the install location or try restarting your "
-    L"system, and then retry installation afterwards.";
+    L"system, and then retry installation afterwards.");
 
 std::wstring Lower(std::wstring_view text) {
   std::wstring out(text);
@@ -216,16 +217,16 @@ std::wstring SuggestedOwnFolder(const std::wstring& location) {
 
 bool CheckInstallLocation(const std::wstring& location, const InstallEnvironment& environment, std::wstring* error) {
   if (location.empty()) {
-    if (error != nullptr) *error = L"You must set an install location";
+    if (error != nullptr) *error = T(L"You must set an install location");
     return false;
   }
   if (!InstallLocationAllowed(location, environment)) {
-    if (error != nullptr) *error = kCannotInstallHere;
+    if (error != nullptr) *error = T(kCannotInstallHere);
     return false;
   }
   std::wstring directory_error;
   if (!EnsureDirectory(location, &directory_error)) {
-    if (error != nullptr) *error = GetLastError() == ERROR_ACCESS_DENIED ? std::wstring(kNoWriteAccess) : directory_error;
+    if (error != nullptr) *error = GetLastError() == ERROR_ACCESS_DENIED ? std::wstring(T(kNoWriteAccess)) : directory_error;
     return false;
   }
   const std::wstring test_file = JoinPath(location, L"ElixirWriteTest.txt");
@@ -233,8 +234,8 @@ bool CheckInstallLocation(const std::wstring& location, const InstallEnvironment
   if (file == INVALID_HANDLE_VALUE) {
     const DWORD code = GetLastError();
     if (error != nullptr) {
-      *error = code == ERROR_ACCESS_DENIED ? std::wstring(kNoWriteAccess)
-                                           : WithErrorCause(L"Elixir can’t write to this folder.", code);
+      *error = code == ERROR_ACCESS_DENIED ? std::wstring(T(kNoWriteAccess))
+                                           : WithErrorCause(T(L"Elixir can’t write to this folder."), code);
     }
     return false;
   }
@@ -249,7 +250,7 @@ bool InstallElixir(const InstallRequest& request, const InstallEnvironment& envi
   if (!PathsEqual(request.source, target)) {
     ClearReadOnly(target);
     if (!CopyFileW(request.source.c_str(), target.c_str(), FALSE)) {
-      if (error != nullptr) *error = kCannotOverwrite;
+      if (error != nullptr) *error = T(kCannotOverwrite);
       return false;
     }
   }
@@ -257,7 +258,7 @@ bool InstallElixir(const InstallRequest& request, const InstallEnvironment& envi
   RegistryKey uninstall;
   if (RegCreateKeyExW(environment.registry_root, environment.uninstall_key.c_str(), 0, nullptr, 0,
                       KEY_READ | KEY_WRITE, nullptr, &uninstall.key, nullptr) != ERROR_SUCCESS) {
-    if (error != nullptr) *error = WithErrorCause(L"Elixir couldn’t register itself with Windows.", GetLastError());
+    if (error != nullptr) *error = WithErrorCause(T(L"Elixir couldn’t register itself with Windows."), GetLastError());
     return false;
   }
   const std::wstring quoted = L"\"" + target + L"\"";
@@ -375,7 +376,7 @@ bool UpgradeInstalledCopy(const std::wstring& running, const std::wstring& locat
     if (!copied) Sleep(500);
   }
   if (!copied) {
-    if (error != nullptr) *error = WithErrorCause(L"Elixir couldn’t replace the installed version.", code);
+    if (error != nullptr) *error = WithErrorCause(T(L"Elixir couldn’t replace the installed version."), code);
     return false;
   }
   RegistryKey uninstall;

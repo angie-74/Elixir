@@ -13,7 +13,9 @@
 #include <unordered_set>
 
 #include "core/instances.h"
+#include "core/shared_settings.h"
 #include "core/util.h"
+#include "core/i18n.h"
 #include "resource.h"
 #include "ui/app.h"
 #include "ui/theme.h"
@@ -29,12 +31,43 @@ std::string DecimalSetting(float value) {
 }
 
 std::wstring ErrorLine(const std::wstring& error) {
-  const std::size_t start = error.rfind(L"(line ");
+  constexpr std::wstring_view kMark = L"(line ";
+  const std::size_t start = error.rfind(kMark);
   if (start == std::wstring::npos) return {};
   const std::size_t end = error.find(L',', start);
   if (end == std::wstring::npos) return {};
-  return error.substr(start + 1, end - start - 1);
+  return error.substr(start + kMark.size(), end - start - kMark.size());
 }
+
+const std::wstring& Shown(const std::string& text) { return T(Utf8ToWide(text)); }
+
+[[maybe_unused]] constexpr const wchar_t* kPresetTexts[] = {
+    ELIXIR_TR(L"Geometry"),
+    ELIXIR_TR(L"Rendering and Graphics"),
+    ELIXIR_TR(L"Mesh detail"),
+    ELIXIR_TR(L"Control how detailed meshes appear in-game."),
+    ELIXIR_TR(L"Off"),
+    ELIXIR_TR(L"On"),
+    ELIXIR_TR(L"Lowest"),
+    ELIXIR_TR(L"Low"),
+    ELIXIR_TR(L"High"),
+    ELIXIR_TR(L"Highest"),
+    ELIXIR_TR(L"Lowest quality"),
+    ELIXIR_TR(L"Highest quality"),
+    ELIXIR_TR(L"Lower qualities may cause meshes to disappear."),
+    ELIXIR_TR(L"Anti-aliasing quality (MSAA)"),
+    ELIXIR_TR(L"Automatic"),
+    ELIXIR_TR(L"Preserve rendering quality with display scaling"),
+    ELIXIR_TR(L"Roblox reduces your rendering quality depending on how your display is scaled in Windows."),
+    ELIXIR_TR(L"Graphics quality override"),
+    ELIXIR_TR(L"Choose the graphics quality Roblox should use."),
+    ELIXIR_TR(L"Hide grass"),
+    ELIXIR_TR(L"Turns grass off, which can run faster."),
+    ELIXIR_TR(L"Gray sky"),
+    ELIXIR_TR(L"Replaces the sky with a plain gray one."),
+    ELIXIR_TR(L"Pause lighting updates"),
+    ELIXIR_TR(L"Can run faster, but lighting may not update when the world changes."),
+};
 
 class ButtonFlow {
  public:
@@ -86,10 +119,10 @@ constexpr wchar_t kFlagRulesAnnouncement[] =
 }
 
 float App::FastFlagsWarning(Ui& ui, float x, float y, float width) {
-  const float link_width = ui.TextWidth(L"Learn more", TextStyle::kBody) + 2.0f;
+  const float link_width = ui.TextWidth(T(L"Learn more"), TextStyle::kBody) + 2.0f;
   const float top = y;
-  y = Banner(ui, x, y, width, 1, L"Warning", L"Roblox only applies whitelisted FFlags.", link_width + 28.0f);
-  if (ui.Link(L"fflags.learnmore", x + width - link_width - 18.0f, top + (y - top) / 2.0f - 10.0f, L"Learn more")) {
+  y = Banner(ui, x, y, width, 1, T(L"Warning"), T(L"Roblox only applies whitelisted FFlags."), link_width + 28.0f);
+  if (ui.Link(L"fflags.learnmore", x + width - link_width - 18.0f, top + (y - top) / 2.0f - 10.0f, T(L"Learn more"))) {
     Defer([this] { OpenPath(kFlagRulesAnnouncement); });
   }
   return y;
@@ -99,25 +132,25 @@ float App::BuildFastFlags(Ui& ui, float x, float y, float width) {
   pending_menu_.reset();
   if (!fast_flags_.editor) LoadFastFlags(true);
   if (fast_flags_.editor_open) return BuildFastFlagEditor(ui, x, y, width);
-  y = PageHeader(ui, x, y, width, L"Fast Flags",
-                 L"Control how specific Roblox engine parameters and features are configured.");
+  y = PageHeader(ui, x, y, width, T(L"Fast Flags"),
+                 T(L"Control how specific Roblox engine parameters and features are configured."));
 
   if (!fast_flags_.load_error.empty()) {
     const float top = y;
     const std::wstring line = ErrorLine(fast_flags_.load_error);
-    y = Banner(ui, x, y, width, 2, L"Your Fast Flags couldn’t be read",
-               line.empty() ? std::wstring(L"Start over to make a new list.")
-                            : L"There’s a mistake on " + line + L". Start over to make a new list.",
+    y = Banner(ui, x, y, width, 2, T(L"Your Fast Flags couldn’t be read"),
+               line.empty() ? T(L"Start over to make a new list.")
+                            : TF(L"There’s a mistake on line {0}. Start over to make a new list.", line),
                140.0f);
     if (ui.Button(L"fflags.startover", D2D1::RectF(x + width - 136.0f, top + 12.0f, x + width - 16.0f, top + 44.0f),
-                  L"Start over", ButtonStyle::kStandard)) {
+                  T(L"Start over"), ButtonStyle::kStandard)) {
       Overlay overlay;
       overlay.id = L"fflags.startover";
       overlay.status = 1;
-      overlay.title = L"Start an empty list?";
-      overlay.body = L"Your old Fast Flags are kept as a backup.";
-      overlay.actions = {{L"fflags.startover.confirm", L"Start over", ButtonStyle::kDanger},
-                         {L"overlay.close", L"Cancel", ButtonStyle::kStandard}};
+      overlay.title = T(L"Start an empty list?");
+      overlay.body = T(L"Your old Fast Flags are kept as a backup.");
+      overlay.actions = {{L"fflags.startover.confirm", T(L"Start over"), ButtonStyle::kDanger},
+                         {L"overlay.close", T(L"Cancel"), ButtonStyle::kStandard}};
       Defer([this, overlay] { ShowOverlay(overlay); });
     }
     return y;
@@ -135,30 +168,30 @@ float App::BuildFastFlags(Ui& ui, float x, float y, float width) {
   BeginOptions();
   float cy = y;
   {
-    const float button = ui.ButtonWidth(L"Open", glyph::kEdit);
-    cy = SettingRow(ui, cx, cy, cw, L"Fast Flag Editor", L"Manage your own Fast Flags. Use with caution.", button,
+    const float button = ui.ButtonWidth(T(L"Open"), glyph::kEdit);
+    cy = SettingRow(ui, cx, cy, cw, T(L"Fast Flag Editor"), T(L"Manage your own Fast Flags. Use with caution."), button,
                     32.0f, &control, true);
-    if (ui.Button(L"fflags.open", control, L"Open", ButtonStyle::kStandard, true, glyph::kEdit)) {
+    if (ui.Button(L"fflags.open", control, T(L"Open"), ButtonStyle::kStandard, true, glyph::kEdit)) {
       OpenFastFlagEditor(true);
     }
   }
-  cy = SettingRow(ui, cx, cy, cw, L"Allow Elixir to manage Fast Flags",
-                  L"Turning this off stops anything set here from reaching Roblox.", 96.0f, 32.0f, &control, false);
-  if (ui.Toggle(L"fflags.manage", control, &config_.advanced.manage_fast_flags, L"Allow Elixir to manage Fast Flags")) {
+  cy = SettingRow(ui, cx, cy, cw, T(L"Allow Elixir to manage Fast Flags"),
+                  T(L"Turning this off stops anything set here from reaching Roblox."), ui.ToggleWidth(), 32.0f, &control, false);
+  if (ui.Toggle(L"fflags.manage", control, &config_.advanced.manage_fast_flags, T(L"Allow Elixir to manage Fast Flags"))) {
     SaveConfig();
   }
   {
-    const float button = ui.ButtonWidth(L"Reset", glyph::kReset);
-    cy = SettingRow(ui, cx, cy, cw, L"Reset everything to defaults", L"Removes every Fast Flag set here and in the editor.",
+    const float button = ui.ButtonWidth(T(L"Reset"), glyph::kReset);
+    cy = SettingRow(ui, cx, cy, cw, T(L"Reset everything to defaults"), T(L"Removes every Fast Flag set here and in the editor."),
                     button, 32.0f, &control, false);
-    if (ui.Button(L"fflags.reset", control, L"Reset", ButtonStyle::kDanger, !editor.flags().empty(), glyph::kReset)) {
+    if (ui.Button(L"fflags.reset", control, T(L"Reset"), ButtonStyle::kDanger, !editor.flags().empty(), glyph::kReset)) {
       Overlay overlay;
       overlay.id = L"fflags.reset";
       overlay.status = 1;
-      overlay.title = L"Reset every Fast Flag?";
-      overlay.body = L"This removes all of your Fast Flags. Roblox goes back to its own settings.";
-      overlay.actions = {{L"fflags.reset.confirm", L"Reset", ButtonStyle::kDanger},
-                         {L"overlay.close", L"Cancel", ButtonStyle::kStandard}};
+      overlay.title = T(L"Reset every Fast Flag?");
+      overlay.body = T(L"This removes all of your Fast Flags. Roblox goes back to its own settings.");
+      overlay.actions = {{L"fflags.reset.confirm", T(L"Reset"), ButtonStyle::kDanger},
+                         {L"overlay.close", T(L"Cancel"), ButtonStyle::kStandard}};
       Defer([this, overlay] { ShowOverlay(overlay); });
     }
   }
@@ -169,7 +202,7 @@ float App::BuildFastFlags(Ui& ui, float x, float y, float width) {
     if (std::find(groups.begin(), groups.end(), preset.group) == groups.end()) groups.push_back(preset.group);
   }
   for (const std::string& group : groups) {
-    y = SectionTitle(ui, x, y, width, Utf8ToWide(group));
+    y = SectionTitle(ui, x, y, width, Shown(group));
     BeginOptions();
     cy = y;
     for (const fflags::Preset& preset : fflags::BuiltinPresets()) {
@@ -200,7 +233,7 @@ float App::BuildFastFlags(Ui& ui, float x, float y, float width) {
 float App::FastFlagSetting(Ui& ui, float x, float y, float width, const fflags::Preset& preset) {
   fflags::FlagEditor& editor = *fast_flags_.editor;
   const std::wstring id = L"fflags.preset." + Utf8ToWide(preset.id);
-  const std::wstring title = Utf8ToWide(preset.title);
+  const std::wstring title = Shown(preset.title);
   const int last = static_cast<int>(preset.options.size()) - 1;
   int active = editor.ActiveOption(preset.id);
   const auto apply = [&](int option) {
@@ -216,15 +249,15 @@ float App::FastFlagSetting(Ui& ui, float x, float y, float width, const fflags::
   if (preset.control == fflags::PresetControl::kToggle) {
     bool on = active != 0;
     const float bottom =
-        SettingRow(ui, x, y, width, title, Utf8ToWide(preset.description), 96.0f, 32.0f, &control, true);
+        SettingRow(ui, x, y, width, title, Shown(preset.description), ui.ToggleWidth(), 32.0f, &control, true);
     if (ui.Toggle(id, control, &on, title)) apply(on ? last : 0);
     return bottom;
   }
 
   if (preset.control == fflags::PresetControl::kChoice) {
     const float bottom =
-        SettingRow(ui, x, y, width, title, Utf8ToWide(preset.description), std::min(200.0f, width), 32.0f, &control, true);
-    const std::wstring label = active < 0 ? std::wstring(L"Custom") : Utf8ToWide(preset.options[active].label);
+        SettingRow(ui, x, y, width, title, Shown(preset.description), std::min(200.0f, width), 32.0f, &control, true);
+    const std::wstring label = active < 0 ? std::wstring(T(L"Custom")) : Shown(preset.options[active].label);
     const bool open = MenuOpen(id);
     if (ui.ComboBox(id, control, title, label, open, true)) {
       Defer([this, id, open, active, count = last + 1] { SetMenu(id, open ? -1 : std::max(0, active), count); });
@@ -235,7 +268,7 @@ float App::FastFlagSetting(Ui& ui, float x, float y, float width, const fflags::
       menu.button = control;
       menu.selected = active;
       menu.preset = preset.id;
-      for (const fflags::PresetOption& option : preset.options) menu.options.push_back(Utf8ToWide(option.label));
+      for (const fflags::PresetOption& option : preset.options) menu.options.push_back(Shown(option.label));
       pending_menu_ = std::move(menu);
     }
     return bottom;
@@ -244,26 +277,26 @@ float App::FastFlagSetting(Ui& ui, float x, float y, float width, const fflags::
   const bool standalone = preset.control == fflags::PresetControl::kSlider;
   const int first = standalone ? 0 : 1;
   const auto slider_row = [&](D2D1_RECT_F row) {
-    const std::wstring low = Utf8ToWide(preset.low_label);
-    const std::wstring high = Utf8ToWide(preset.high_label);
+    const std::wstring low = Shown(preset.low_label);
+    const std::wstring high = Shown(preset.high_label);
     const float low_width = low.empty() ? 0.0f : ui.TextWidth(low, TextStyle::kBody) + 8.0f;
     const float high_width = high.empty() ? 0.0f : ui.TextWidth(high, TextStyle::kBody) + 8.0f;
     float box_width = 0.0f;
     if (preset.show_value) {
       box_width = 30.0f;
       for (int option = first; option <= last; ++option) {
-        box_width = std::max(box_width, ui.TextWidth(Utf8ToWide(preset.options[option].label), TextStyle::kBody) + 12.0f);
+        box_width = std::max(box_width, ui.TextWidth(Shown(preset.options[option].label), TextStyle::kBody) + 12.0f);
       }
-      if (active < 0) box_width = std::max(box_width, ui.TextWidth(L"Custom", TextStyle::kBody) + 12.0f);
+      if (active < 0) box_width = std::max(box_width, ui.TextWidth(T(L"Custom"), TextStyle::kBody) + 12.0f);
     }
     if (!low.empty()) ui.TextLine(D2D1::RectF(row.left, row.top, row.left + low_width, row.bottom), low, TextStyle::kBody,
                                   theme::kText);
     const float slider_right = row.right - box_width - (box_width > 0.0f ? 8.0f : 0.0f) - high_width;
     const int position = active >= first ? active : last;
     double value = position;
-    const std::wstring label = active < 0 ? std::wstring(L"Custom") : Utf8ToWide(preset.options[position].label);
+    const std::wstring label = active < 0 ? std::wstring(T(L"Custom")) : Shown(preset.options[position].label);
     if (ui.Slider(id + L".slider", D2D1::RectF(row.left + low_width, row.top, slider_right, row.bottom), &value,
-                  first, last, 1.0, standalone ? title : title + L" level", label, true, 0.0f)) {
+                  first, last, 1.0, standalone ? title : TF(L"{0} level", title), label, true, 0.0f)) {
       apply(static_cast<int>(std::lround(value)));
     }
     if (!high.empty()) {
@@ -279,7 +312,7 @@ float App::FastFlagSetting(Ui& ui, float x, float y, float width, const fflags::
   };
 
   if (standalone) {
-    const float bottom = SettingRow(ui, x, y, width, title, Utf8ToWide(preset.description),
+    const float bottom = SettingRow(ui, x, y, width, title, Shown(preset.description),
                                     std::min(360.0f, width), 32.0f, &control, true);
     slider_row(control);
     return bottom;
@@ -289,7 +322,7 @@ float App::FastFlagSetting(Ui& ui, float x, float y, float width, const fflags::
   const bool cards = option_cards_;
   option_cards_ = false;
   const int card = ui.BeginCard(x - theme::kCardPadding, y, width + 2.0f * theme::kCardPadding);
-  float bottom = SettingRow(ui, x, y, width, title, Utf8ToWide(preset.description), 96.0f, 32.0f, &control, true);
+  float bottom = SettingRow(ui, x, y, width, title, Shown(preset.description), ui.ToggleWidth(), 32.0f, &control, true);
   if (ui.Toggle(id, control, &on, title)) {
     apply(on ? last : 0);
     active = editor.ActiveOption(preset.id);
@@ -299,7 +332,7 @@ float App::FastFlagSetting(Ui& ui, float x, float y, float width, const fflags::
             theme::kDivider);
     bottom += 12.0f;
     if (!preset.note.empty()) {
-      bottom += ui.Text(x, bottom, width, Utf8ToWide(preset.note), TextStyle::kCaption, theme::kTextTertiary,
+      bottom += ui.Text(x, bottom, width, Shown(preset.note), TextStyle::kCaption, theme::kTextTertiary,
                         Align::kCenter) + 10.0f;
     }
     bottom = slider_row(D2D1::RectF(x, bottom, x + width, bottom + 32.0f)) + 16.0f;
@@ -311,7 +344,7 @@ float App::FastFlagSetting(Ui& ui, float x, float y, float width, const fflags::
 
 float App::BuildFastFlagEditor(Ui& ui, float x, float y, float width) {
   fflags::FlagEditor& editor = *fast_flags_.editor;
-  y = PageHeader(ui, x, y, width, L"Fast Flag Editor", L"Manage your own Fast Flags. Click a name or value to edit it.");
+  y = PageHeader(ui, x, y, width, T(L"Fast Flag Editor"), T(L"Manage your own Fast Flags. Click a name or value to edit it."));
   y = FastFlagsWarning(ui, x, y, width) + 16.0f;
 
   std::vector<fflags::EditorRow> rows;
@@ -324,13 +357,13 @@ float App::BuildFastFlagEditor(Ui& ui, float x, float y, float width) {
 
   {
     ButtonFlow flow(ui, x, x + width, y);
-    if (flow.Add(L"fflags.back", L"Back", ButtonStyle::kStandard, true, glyph::kBack)) OpenFastFlagEditor(false);
-    if (flow.Add(L"fflags.add", L"Add new", ButtonStyle::kStandard, true, glyph::kAdd)) {
+    if (flow.Add(L"fflags.back", T(L"Back"), ButtonStyle::kStandard, true, glyph::kBack)) OpenFastFlagEditor(false);
+    if (flow.Add(L"fflags.add", T(L"Add new"), ButtonStyle::kStandard, true, glyph::kAdd)) {
       fast_flags_.adding = true;
       Defer([this] { SetFocusTo(L"fflags.new.name", true); });
     }
     const std::size_t selected = fast_flags_.selected.size();
-    if (flow.Add(L"fflags.delete", L"Delete selected", ButtonStyle::kDanger, selected > 0, glyph::kDelete)) {
+    if (flow.Add(L"fflags.delete", T(L"Delete selected"), ButtonStyle::kDanger, selected > 0, glyph::kDelete)) {
       fast_flags_.motion.leaving.clear();
       for (std::size_t i = 0; i < rows.size(); ++i) {
         if (fast_flags_.selected.count(rows[i].name) == 0) continue;
@@ -341,30 +374,30 @@ float App::BuildFastFlagEditor(Ui& ui, float x, float y, float width) {
       fast_flags_.message.clear();
       FastFlagsChanged();
     }
-    if (flow.Add(L"fflags.presetflags", fast_flags_.show_preset_flags ? L"Hide preset flags" : L"Show preset flags",
+    if (flow.Add(L"fflags.presetflags", fast_flags_.show_preset_flags ? T(L"Hide preset flags") : T(L"Show preset flags"),
                  ButtonStyle::kStandard, true, fast_flags_.show_preset_flags ? glyph::kEyeOff : glyph::kEye)) {
       fast_flags_.show_preset_flags = !fast_flags_.show_preset_flags;
     }
-    if (flow.Add(L"fflags.import", L"Import JSON", ButtonStyle::kStandard, true, glyph::kImport)) {
+    if (flow.Add(L"fflags.import", T(L"Import JSON"), ButtonStyle::kStandard, true, glyph::kImport)) {
       Overlay overlay;
       overlay.id = L"fflags.import";
       overlay.status = 4;
-      overlay.title = L"Import JSON";
-      overlay.body = L"Add Fast Flags from JSON you copied, or from a file. Flags you already have get the new values.";
-      overlay.actions = {{L"fflags.import.paste", L"Paste", ButtonStyle::kStandard},
-                         {L"fflags.import.file", L"Open file…", ButtonStyle::kStandard},
-                         {L"overlay.close", L"Cancel", ButtonStyle::kStandard}};
+      overlay.title = T(L"Import JSON");
+      overlay.body = T(L"Add Fast Flags from JSON you copied, or from a file. Flags you already have get the new values.");
+      overlay.actions = {{L"fflags.import.paste", T(L"Paste"), ButtonStyle::kStandard},
+                         {L"fflags.import.file", T(L"Open file…"), ButtonStyle::kStandard},
+                         {L"overlay.close", T(L"Cancel"), ButtonStyle::kStandard}};
       Defer([this, overlay] { ShowOverlay(overlay); });
     }
-    if (flow.Add(L"fflags.export", L"Export JSON", ButtonStyle::kStandard, !editor.flags().empty(), glyph::kExport)) {
+    if (flow.Add(L"fflags.export", T(L"Export JSON"), ButtonStyle::kStandard, !editor.flags().empty(), glyph::kExport)) {
       Overlay overlay;
       overlay.id = L"fflags.export";
       overlay.status = 4;
-      overlay.title = L"Export JSON";
-      overlay.body = L"Copy your Fast Flags as JSON, or save them to a file.";
-      overlay.actions = {{L"fflags.export.copy", L"Copy", ButtonStyle::kStandard},
-                         {L"fflags.export.file", L"Save file…", ButtonStyle::kStandard},
-                         {L"overlay.close", L"Cancel", ButtonStyle::kStandard}};
+      overlay.title = T(L"Export JSON");
+      overlay.body = T(L"Copy your Fast Flags as JSON, or save them to a file.");
+      overlay.actions = {{L"fflags.export.copy", T(L"Copy"), ButtonStyle::kStandard},
+                         {L"fflags.export.file", T(L"Save file…"), ButtonStyle::kStandard},
+                         {L"overlay.close", T(L"Cancel"), ButtonStyle::kStandard}};
       Defer([this, overlay] { ShowOverlay(overlay); });
     }
     y = flow.bottom() + 12.0f;
@@ -375,8 +408,8 @@ float App::BuildFastFlagEditor(Ui& ui, float x, float y, float width) {
     ui.Label(D2D1::RectF(x, y, x + width, y + height), fast_flags_.message);
     y += std::max(20.0f, height) + 12.0f;
   }
-  ui.TextField(L"fflags.search", D2D1::RectF(x, y, x + width, y + 34.0f), &fast_flags_.search, L"Search",
-               L"Search Fast Flags");
+  ui.TextField(L"fflags.search", D2D1::RectF(x, y, x + width, y + 34.0f), &fast_flags_.search, T(L"Search"),
+               T(L"Search Fast Flags"));
   y += 34.0f + 12.0f;
 
   const float cx = x + theme::kCardPadding;
@@ -384,23 +417,23 @@ float App::BuildFastFlagEditor(Ui& ui, float x, float y, float width) {
   if (fast_flags_.adding) {
     const int card = ui.BeginCard(x, y, width);
     float cy = y + 16.0f;
-    const float add_width = ui.ButtonWidth(L"Add", glyph::kAdd);
-    const float cancel_width = ui.ButtonWidth(L"Cancel");
+    const float add_width = ui.ButtonWidth(T(L"Add"), glyph::kAdd);
+    const float cancel_width = ui.ButtonWidth(T(L"Cancel"));
     const float value_width = std::max(140.0f, std::floor((cw - add_width - cancel_width - 24.0f) * 0.34f));
     const float name_width = cw - add_width - cancel_width - value_width - 24.0f;
-    ui.TextField(L"fflags.new.name", D2D1::RectF(cx, cy, cx + name_width, cy + 32.0f), &fast_flags_.new_name, L"Name",
-                 L"New flag name");
+    ui.TextField(L"fflags.new.name", D2D1::RectF(cx, cy, cx + name_width, cy + 32.0f), &fast_flags_.new_name, T(L"Name"),
+                 T(L"New flag name"));
     ui.TextField(L"fflags.new.value",
                  D2D1::RectF(cx + name_width + 8.0f, cy, cx + name_width + 8.0f + value_width, cy + 32.0f),
-                 &fast_flags_.new_value, L"Value", L"New flag value");
+                 &fast_flags_.new_value, T(L"Value"), T(L"New flag value"));
     const float buttons = cx + name_width + value_width + 16.0f;
-    if (ui.Button(L"fflags.new.add", D2D1::RectF(buttons, cy, buttons + add_width, cy + 32.0f), L"Add",
+    if (ui.Button(L"fflags.new.add", D2D1::RectF(buttons, cy, buttons + add_width, cy + 32.0f), T(L"Add"),
                   ButtonStyle::kStandard, !TrimWide(fast_flags_.new_name).empty(), glyph::kAdd)) {
       AddFastFlag();
     }
     if (ui.Button(L"fflags.new.cancel",
                   D2D1::RectF(buttons + add_width + 8.0f, cy, buttons + add_width + 8.0f + cancel_width, cy + 32.0f),
-                  L"Cancel", ButtonStyle::kStandard)) {
+                  T(L"Cancel"), ButtonStyle::kStandard)) {
       fast_flags_.adding = false;
       fast_flags_.new_name.clear();
       fast_flags_.new_value.clear();
@@ -413,9 +446,9 @@ float App::BuildFastFlagEditor(Ui& ui, float x, float y, float width) {
   const float check_width = 32.0f;
   const float value_width = std::max(140.0f, std::floor((cw - check_width) * 0.34f));
   const float name_width = cw - check_width - value_width - 8.0f;
-  ui.TextLine(D2D1::RectF(cx + check_width, cy, cx + check_width + name_width, cy + 24.0f), L"Name",
+  ui.TextLine(D2D1::RectF(cx + check_width, cy, cx + check_width + name_width, cy + 24.0f), T(L"Name"),
               TextStyle::kCaptionStrong, theme::kTextTertiary);
-  ui.TextLine(D2D1::RectF(cx + check_width + name_width + 8.0f, cy, cx + cw, cy + 24.0f), L"Value",
+  ui.TextLine(D2D1::RectF(cx + check_width + name_width + 8.0f, cy, cx + cw, cy + 24.0f), T(L"Value"),
               TextStyle::kCaptionStrong, theme::kTextTertiary);
   cy += 30.0f;
   struct Line {
@@ -432,7 +465,7 @@ float App::BuildFastFlagEditor(Ui& ui, float x, float y, float width) {
   }
   if (lines.empty()) {
     ui.Fill(D2D1::RectF(cx, cy - 4.0f, cx + cw, cy - 3.0f), theme::kDivider);
-    const std::wstring empty = editor.flags().empty() ? L"No Fast Flags yet." : L"No Fast Flags match.";
+    const std::wstring empty = editor.flags().empty() ? T(L"No Fast Flags yet.") : T(L"No Fast Flags match.");
     cy += 8.0f + ui.Text(cx, cy + 8.0f, cw, empty, TextStyle::kSecondary, theme::kTextTertiary);
     return ui.EndCard(card, cy + 4.0f);
   }
@@ -480,7 +513,7 @@ float App::BuildFastFlagEditor(Ui& ui, float x, float y, float width) {
     const std::wstring name = Utf8ToWide(row.name);
     bool selected = fast_flags_.selected.count(row.name) > 0;
     if (ui.CheckBox(L"fflags.row." + index + L".select", D2D1::RectF(cx, cy, cx + 24.0f, cy + 32.0f), &selected,
-                    L"Select " + name)) {
+                    TF(L"Select {0}", name))) {
       if (selected) {
         fast_flags_.selected.insert(row.name);
       } else {
@@ -490,7 +523,7 @@ float App::BuildFastFlagEditor(Ui& ui, float x, float y, float width) {
     std::wstring name_text = name;
     if (ui.TextField(L"fflags.row." + index + L".name",
                      D2D1::RectF(cx + check_width, cy, cx + check_width + name_width, cy + 32.0f), &name_text,
-                     L"Name", L"Name of " + name)) {
+                     T(L"Name"), TF(L"Name of {0}", name))) {
       const fflags::EditResult result = editor.RenameFlag(row.name, WideToUtf8(name_text));
       if (result.ok) {
         if (fast_flags_.selected.erase(row.name) > 0) fast_flags_.selected.insert(WideToUtf8(TrimWide(name_text)));
@@ -502,7 +535,7 @@ float App::BuildFastFlagEditor(Ui& ui, float x, float y, float width) {
     std::wstring value_text = Utf8ToWide(row.value);
     if (ui.TextField(L"fflags.row." + index + L".value",
                      D2D1::RectF(cx + check_width + name_width + 8.0f, cy, cx + cw, cy + 32.0f), &value_text,
-                     L"Value", L"Value of " + name)) {
+                     T(L"Value"), TF(L"Value of {0}", name))) {
       const fflags::EditResult result = editor.SetFlag(row.name, WideToUtf8(value_text));
       if (result.ok) {
         FastFlagsChanged();
@@ -521,6 +554,7 @@ float App::BuildFastFlagEditor(Ui& ui, float x, float y, float width) {
 }
 
 void App::RefreshGlobalSettings() {
+  ShareSettingsWith(paths_, paths_);
   GlobalSettings settings;
   global_settings_error_.clear();
   if (LoadGlobalSettings(paths_, &settings, &global_settings_error_)) {
@@ -555,14 +589,14 @@ void App::SaveGlobalValue(GlobalSetting setting, std::string value) {
 }
 
 float App::BuildGlobalSettings(Ui& ui, float x, float y, float width) {
-  y = PageHeader(ui, x, y, width, L"Global Settings", L"In-game preferences for this Roblox profile.");
+  y = PageHeader(ui, x, y, width, T(L"Global Settings"), T(L"In-game preferences, shared by all your accounts."));
   if (!global_settings_) {
     const float top = y;
-    const float button_width = ui.ButtonWidth(L"Refresh", glyph::kRefresh);
-    y = Banner(ui, x, y, width, 1, L"Game settings unavailable", global_settings_error_, button_width + 12.0f);
+    const float button_width = ui.ButtonWidth(T(L"Refresh"), glyph::kRefresh);
+    y = Banner(ui, x, y, width, 1, T(L"Game settings unavailable"), global_settings_error_, button_width + 12.0f);
     const float right = x + width - theme::kCardPadding;
     if (ui.Button(L"global.refresh", D2D1::RectF(right - button_width, top + 12.0f, right, top + 44.0f),
-                  L"Refresh", ButtonStyle::kStandard, true, glyph::kRefresh)) RefreshGlobalSettings();
+                  T(L"Refresh"), ButtonStyle::kStandard, true, glyph::kRefresh)) RefreshGlobalSettings();
     return y;
   }
 
@@ -573,15 +607,15 @@ float App::BuildGlobalSettings(Ui& ui, float x, float y, float width) {
   const bool editable = !settings.read_only && !in_use;
   D2D1_RECT_F control{};
   if (in_use) {
-    y = Banner(ui, x, y, width, 4, L"Roblox is using this profile", L"Close its game window to edit these settings.") + 16.0f;
+    y = Banner(ui, x, y, width, 4, T(L"Roblox is using this profile"), T(L"Close its game window to edit these settings.")) + 16.0f;
   }
 
   BeginOptions();
-  y = SettingRow(ui, cx, y, cw, L"Read-only settings file",
-                 settings.read_only ? L"Turn this off to edit the settings." : L"Prevent Roblox from overwriting these preferences.",
-                 96.0f, 32.0f, &control, true);
+  y = SettingRow(ui, cx, y, cw, T(L"Read-only settings file"),
+                 settings.read_only ? T(L"Turn this off to edit the settings.") : T(L"Prevent Roblox from overwriting these preferences."),
+                 ui.ToggleWidth(), 32.0f, &control, true);
   bool locked = settings.read_only;
-  if (ui.Toggle(L"global.readonly", control, &locked, L"Read-only settings file", !in_use)) {
+  if (ui.Toggle(L"global.readonly", control, &locked, T(L"Read-only settings file"), !in_use)) {
     std::wstring error;
     const bool saved = SetGlobalSettingsReadOnly(paths_, locked, &error);
     RefreshGlobalSettings();
@@ -589,54 +623,55 @@ float App::BuildGlobalSettings(Ui& ui, float x, float y, float width) {
   }
   y = EndOptions(y) + 24.0f;
 
-  y = SectionTitle(ui, x, y, width, L"Graphics");
+  y = SectionTitle(ui, x, y, width, T(L"Graphics"));
   BeginOptions();
   double quality = settings.quality_level.value_or(0);
   const std::wstring quality_text = settings.quality_level
-      ? (quality == 0 ? L"Auto" : std::to_wstring(*settings.quality_level)) : L"Not set";
+      ? (quality == 0 ? T(L"Auto") : std::to_wstring(*settings.quality_level)) : T(L"Not set");
   const std::wstring quality_hint = global_quality_override_.empty()
-      ? L"Choose Auto or a quality level from 1 to 10."
-      : L"Fast Flags overrides this preference with level " + global_quality_override_ + L".";
-  y = SettingRow(ui, cx, y, cw, L"Graphics quality", quality_hint, std::min(300.0f, cw), 32.0f, &control, true);
-  if (ui.Slider(L"global.quality", control, &quality, 0, 10, 1, L"Graphics quality", quality_text, editable)) {
+      ? T(L"Choose Auto or a quality level from 1 to 10.")
+      : TF(L"Fast Flags overrides this preference with level {0}.", global_quality_override_);
+  y = SettingRow(ui, cx, y, cw, T(L"Graphics quality"), quality_hint, std::min(300.0f, cw), 32.0f, &control, true);
+  if (ui.Slider(L"global.quality", control, &quality, 0, 10, 1, T(L"Graphics quality"), quality_text, editable)) {
     SaveGlobalValue(GlobalSetting::kQualityLevel, std::to_string(static_cast<int>(quality)));
   }
 
   std::wstring fps = settings.framerate_cap && *settings.framerate_cap > 0
       ? std::to_wstring(*settings.framerate_cap) : L"";
-  y = SettingRow(ui, cx, y, cw, L"Framerate cap", L"Frames per second. Clear the field to use the default.",
+  y = SettingRow(ui, cx, y, cw, T(L"Framerate cap"), T(L"Frames per second. Clear the field to use the default."),
                  145.0f, 32.0f, &control, false);
-  if (ui.TextField(L"global.fps", control, &fps, settings.framerate_cap ? L"Default" : L"Not set", L"Framerate cap", editable)) {
+  if (ui.TextField(L"global.fps", control, &fps, settings.framerate_cap ? T(L"Default") : T(L"Not set"), T(L"Framerate cap"), editable)) {
     fps = TrimWide(fps);
     SaveGlobalValue(GlobalSetting::kFramerateCap, fps.empty() ? "-1" : WideToUtf8(fps));
   }
   y = EndOptions(y) + 24.0f;
 
-  y = SectionTitle(ui, x, y, width, L"Interface");
+  y = SectionTitle(ui, x, y, width, T(L"Interface"));
   BeginOptions();
   double transparency = std::round(settings.transparency.value_or(0.0f) * 1000000.0) / 1000000.0;
   const std::wstring transparency_text = settings.transparency
-      ? std::to_wstring(std::lround(transparency * 100)) + L"%" : L"Not set";
-  y = SettingRow(ui, cx, y, cw, L"Background transparency", L"Transparency of supported Roblox interface backgrounds.",
+      ? std::to_wstring(std::lround(transparency * 100)) + L"%" : T(L"Not set");
+  y = SettingRow(ui, cx, y, cw, T(L"Background transparency"), T(L"Transparency of supported Roblox interface backgrounds."),
                  std::min(300.0f, cw), 32.0f, &control, true);
-  if (ui.Slider(L"global.transparency", control, &transparency, 0.0, 1.0, 0.1, L"Background transparency",
+  if (ui.Slider(L"global.transparency", control, &transparency, 0.0, 1.0, 0.1, T(L"Background transparency"),
                 transparency_text, editable)) {
     SaveGlobalValue(GlobalSetting::kTransparency, DecimalSetting(static_cast<float>(transparency)));
   }
 
   bool motion = settings.reduced_motion.value_or(false);
-  y = SettingRow(ui, cx, y, cw, L"Reduced motion",
-                 settings.reduced_motion ? L"Reduce interface animations in Roblox." : L"No preference saved.",
-                 96.0f, 32.0f, &control, false);
-  if (ui.Toggle(L"global.motion", control, &motion, L"Reduced motion", editable)) {
+  y = SettingRow(ui, cx, y, cw, T(L"Reduced motion"),
+                 settings.reduced_motion ? T(L"Reduce interface animations in Roblox.") : T(L"No preference saved."),
+                 ui.ToggleWidth(), 32.0f, &control, false);
+  if (ui.Toggle(L"global.motion", control, &motion, T(L"Reduced motion"), editable)) {
     SaveGlobalValue(GlobalSetting::kReducedMotion, motion ? "true" : "false");
   }
 
   D2D1_RECT_F size_button{};
-  y = SettingRow(ui, cx, y, cw, L"Text size", L"Medium is the default text size.", 145.0f, 32.0f, &size_button, false);
+  y = SettingRow(ui, cx, y, cw, T(L"Text size"), T(L"Medium is the default text size."), 145.0f, 32.0f, &size_button, false);
   const int size_index = settings.text_size.value_or(0) - 1;
   const bool menu_open = MenuOpen(kTextSizeControl) && editable;
-  if (ui.ComboBox(kTextSizeControl, size_button, L"Text size", size_index >= 0 ? kTextSizes[size_index] : L"Not set",
+  if (ui.ComboBox(kTextSizeControl, size_button, T(L"Text size"),
+                  size_index >= 0 ? T(kTextSizes[size_index]) : T(L"Not set"),
                   menu_open, editable)) {
     Defer([this, menu_open, size_index] {
       SetMenu(kTextSizeControl, menu_open ? -1 : std::max(0, size_index), static_cast<int>(kTextSizes.size()));
@@ -644,16 +679,17 @@ float App::BuildGlobalSettings(Ui& ui, float x, float y, float width) {
   }
   y = EndOptions(y) + 24.0f;
 
-  y = SectionTitle(ui, x, y, width, L"Input");
+  y = SectionTitle(ui, x, y, width, T(L"Input"));
   BeginOptions();
   std::wstring sensitivity = settings.mouse_sensitivity ? Utf8ToWide(DecimalSetting(*settings.mouse_sensitivity)) : L"";
-  y = SettingRow(ui, cx, y, cw, L"Mouse sensitivity", L"Camera sensitivity from 0 to 4.", 145.0f, 32.0f, &control, true);
-  if (ui.TextField(L"global.sensitivity", control, &sensitivity, L"Not set", L"Mouse sensitivity", editable)) {
+  y = SettingRow(ui, cx, y, cw, T(L"Mouse sensitivity"), T(L"Camera sensitivity from 0 to 4."), 145.0f, 32.0f, &control, true);
+  if (ui.TextField(L"global.sensitivity", control, &sensitivity, T(L"Not set"), T(L"Mouse sensitivity"), editable)) {
     SaveGlobalValue(GlobalSetting::kMouseSensitivity, WideToUtf8(TrimWide(sensitivity)));
   }
   const float bottom = EndOptions(y);
   if (menu_open) {
-    const std::vector<std::wstring> sizes(kTextSizes.begin(), kTextSizes.end());
+    std::vector<std::wstring> sizes;
+    for (const wchar_t* size : kTextSizes) sizes.push_back(T(size));
     const int chosen = MenuPanel(ui, kTextSizeControl, size_button, sizes, size_index);
     if (chosen >= 0) {
       Defer([this, chosen, size_index] {
@@ -666,38 +702,38 @@ float App::BuildGlobalSettings(Ui& ui, float x, float y, float width) {
 }
 
 float App::BuildIntegrations(Ui& ui, float x, float y, float width) {
-  y = PageHeader(ui, x, y, width, L"Integrations", L"");
+  y = PageHeader(ui, x, y, width, T(L"Integrations"), L"");
   const float cx = x + theme::kCardPadding;
   const float cw = width - 2.0f * theme::kCardPadding;
   IntegrationSettings& settings = config_.integrations;
   D2D1_RECT_F control{};
 
-  y = SectionTitle(ui, x, y, width, L"Discord Rich Presence");
+  y = SectionTitle(ui, x, y, width, T(L"Discord Rich Presence"));
   BeginOptions();
   float cy = y;
-  cy = SettingRow(ui, cx, cy, cw, L"Show Roblox activity in Discord",
-                  L"Shows the experience you’re in on your Discord profile while Discord is open.", 96.0f, 32.0f,
+  cy = SettingRow(ui, cx, cy, cw, T(L"Show Roblox activity in Discord"),
+                  T(L"Shows the experience you’re in on your Discord profile while Discord is open."), ui.ToggleWidth(), 32.0f,
                   &control, true);
-  if (ui.Toggle(L"integrations.discord", control, &settings.discord_rich_presence, L"Discord Rich Presence")) {
+  if (ui.Toggle(L"integrations.discord", control, &settings.discord_rich_presence, T(L"Discord Rich Presence"))) {
     SaveConfig();
   }
   const bool discord = settings.discord_rich_presence;
-  cy = SettingRow(ui, cx, cy, cw, L"Show the game you’re playing", L"Its name, icon and creator. Off shows just Roblox.",
-                  96.0f, 32.0f, &control, false);
-  if (ui.Toggle(L"integrations.discord.game", control, &settings.discord_show_game, L"Show the game you’re playing",
+  cy = SettingRow(ui, cx, cy, cw, T(L"Show the game you’re playing"), T(L"Its name, icon and creator. Off shows just Roblox."),
+                  ui.ToggleWidth(), 32.0f, &control, false);
+  if (ui.Toggle(L"integrations.discord.game", control, &settings.discord_show_game, T(L"Show the game you’re playing"),
                 discord)) {
     SaveConfig();
   }
   const bool game = discord && settings.discord_show_game;
-  cy = SettingRow(ui, cx, cy, cw, L"Show a Join button", L"Friends can join your server. Public servers only.", 96.0f,
+  cy = SettingRow(ui, cx, cy, cw, T(L"Show a Join button"), T(L"Friends can join your server. Public servers only."), ui.ToggleWidth(),
                   32.0f, &control, false);
-  if (ui.Toggle(L"integrations.discord.join", control, &settings.discord_join_button, L"Show a Join button", game)) {
+  if (ui.Toggle(L"integrations.discord.join", control, &settings.discord_join_button, T(L"Show a Join button"), game)) {
     SaveConfig();
   }
-  cy = SettingRow(ui, cx, cy, cw, L"Let games set your activity",
-                  L"Games can change the text and images with BloxstrapRPC.", 96.0f, 32.0f, &control, false);
+  cy = SettingRow(ui, cx, cy, cw, T(L"Let games set your activity"),
+                  T(L"Games can change the text and images with BloxstrapRPC."), ui.ToggleWidth(), 32.0f, &control, false);
   if (ui.Toggle(L"integrations.discord.rpc", control, &settings.discord_allow_game_presence,
-                L"Let games set your activity", game)) {
+                T(L"Let games set your activity"), game)) {
     SaveConfig();
   }
   y = EndOptions(cy);
@@ -707,8 +743,6 @@ float App::BuildIntegrations(Ui& ui, float x, float y, float width) {
 namespace {
 
 std::wstring ReleaseDay(std::string_view iso) {
-  static constexpr const wchar_t* kMonths[] = {L"Jan", L"Feb", L"Mar", L"Apr", L"May", L"Jun",
-                                               L"Jul", L"Aug", L"Sep", L"Oct", L"Nov", L"Dec"};
   if (iso.size() < 10 || iso[4] != '-' || iso[7] != '-') return {};
   int year = 0;
   int month = 0;
@@ -718,14 +752,14 @@ std::wstring ReleaseDay(std::string_view iso) {
       std::from_chars(iso.data() + 8, iso.data() + 10, day).ec != std::errc{} || month < 1 || month > 12) {
     return {};
   }
-  return std::wstring(kMonths[month - 1]) + L" " + std::to_wstring(day) + L", " + std::to_wstring(year);
+  return FormatDate(year, month, day);
 }
 
 }
 
 float App::BuildRobloxVersions(Ui& ui, float x, float y, float width) {
   using Stage = RobloxVersionList::Stage;
-  y = SectionTitle(ui, x, y, width, L"Roblox versions");
+  y = SectionTitle(ui, x, y, width, T(L"Roblox versions"));
   const float cx = x + theme::kCardPadding;
   const float cw = width - 2.0f * theme::kCardPadding;
   const int card = ui.BeginCard(x, y, width);
@@ -743,17 +777,17 @@ float App::BuildRobloxVersions(Ui& ui, float x, float y, float width) {
 
   std::wstring note;
   if (!possible) {
-    note = L"This copy of Elixir can’t download Roblox. Install it from a file.";
+    note = T(L"This copy of Elixir can’t download Roblox. Install it from a file.");
   } else if (loading && releases.empty()) {
-    note = L"Loading versions…";
+    note = T(L"Loading versions…");
   } else if (roblox_list_.stage == Stage::kFailed || list.pinned) {
-    note = list.error.empty() ? std::wstring(L"Couldn’t get the list of versions.") : list.error;
+    note = list.error.empty() ? T(L"Couldn’t get the list of versions.") : list.error;
     const std::int64_t now = UnixNow();
-    if (list.retry_at > now) note += L" Try again at " + FormatLocalClockTime(list.retry_at, now) + L".";
+    if (list.retry_at > now) note = TF(L"{0} Try again at {1}.", note, FormatLocalClockTime(list.retry_at, now));
   }
   if (!note.empty()) {
     const bool retry = possible && !loading;
-    const float retry_width = retry ? ui.ButtonWidth(L"Retry", glyph::kRefresh) : 0.0f;
+    const float retry_width = retry ? ui.ButtonWidth(T(L"Retry"), glyph::kRefresh) : 0.0f;
     const float note_width = cw - (retry ? retry_width + 16.0f : 0.0f);
     const float note_height = ui.TextHeight(note, TextStyle::kSecondary, note_width);
     const float row_height = std::max(note_height, retry ? theme::kButtonHeight : 0.0f);
@@ -761,7 +795,7 @@ float App::BuildRobloxVersions(Ui& ui, float x, float y, float width) {
     ui.Text(cx, top + (row_height - note_height) / 2.0f, note_width, note, TextStyle::kSecondary, theme::kTextSecondary);
     ui.Label(D2D1::RectF(cx, top, cx + note_width, top + row_height), note);
     if (retry && ui.Button(L"versions.retry", D2D1::RectF(cx + cw - retry_width, top, cx + cw, top + theme::kButtonHeight),
-                           L"Retry", ButtonStyle::kStandard, true, glyph::kRefresh)) {
+                           T(L"Retry"), ButtonStyle::kStandard, true, glyph::kRefresh)) {
       Defer([this] { LoadRobloxVersions(); });
     }
     cy = top + row_height + 8.0f;
@@ -781,7 +815,8 @@ float App::BuildRobloxVersions(Ui& ui, float x, float y, float width) {
         subtitle += FormatByteSize(release.TotalSize());
       }
       const bool is_installed = installed && config_.installed.version_code == release.version_code;
-      const wchar_t* trailing = is_installed ? L"Installed" : release.version_code == newest && !list.pinned ? L"Latest" : L"";
+      const std::wstring& trailing =
+          is_installed ? T(L"Installed") : release.version_code == newest && !list.pinned ? T(L"Latest") : T(L"");
       if (ui.ListItem(L"versions.item." + std::to_wstring(i), D2D1::RectF(cx - 8.0f, cy, cx + cw + 8.0f, cy + 54.0f),
                       static_cast<int>(i) == roblox_list_.selected, L"Roblox " + Utf8ToWide(release.version_name),
                       subtitle, trailing, glyph::kPackage, kVersionGroup, IDR_ROBLOX_DOWNLOAD_PACKAGE_PNG)) {
@@ -791,8 +826,7 @@ float App::BuildRobloxVersions(Ui& ui, float x, float y, float width) {
     }
     if (releases.size() > kShownAtFirst) {
       if (ui.Link(L"versions.more", cx, cy + 4.0f,
-                  roblox_list_.show_all ? std::wstring(L"Show fewer")
-                                        : L"Show all " + std::to_wstring(releases.size()) + L" versions")) {
+                  roblox_list_.show_all ? T(L"Show fewer") : TF(L"Show all {0} versions", releases.size()))) {
         roblox_list_.show_all = !roblox_list_.show_all;
         if (!roblox_list_.show_all && roblox_list_.selected >= static_cast<int>(kShownAtFirst)) roblox_list_.selected = -1;
       }
@@ -805,7 +839,7 @@ float App::BuildRobloxVersions(Ui& ui, float x, float y, float width) {
       ui.Label(D2D1::RectF(cx, cy - 30.0f, cx + cw - 110.0f, cy), status);
       ui.Progress(D2D1::RectF(cx, cy, cx + cw - 110.0f, cy + 4.0f),
                   roblox_update_.percent >= 0 ? static_cast<float>(std::min(roblox_update_.percent, 100)) / 100.0f : -1.0f);
-      if (ui.Button(L"versions.cancel", D2D1::RectF(cx + cw - 92.0f, cy - 14.0f, cx + cw, cy + 18.0f), L"Cancel",
+      if (ui.Button(L"versions.cancel", D2D1::RectF(cx + cw - 92.0f, cy - 14.0f, cx + cw, cy + 18.0f), T(L"Cancel"),
                     ButtonStyle::kStandard)) {
         if (roblox_update_.cancel) *roblox_update_.cancel = true;
       }
@@ -815,11 +849,11 @@ float App::BuildRobloxVersions(Ui& ui, float x, float y, float width) {
       const bool chosen_installed =
           chosen && installed &&
           releases[static_cast<std::size_t>(roblox_list_.selected)].version_code == config_.installed.version_code;
-      const float install_width = ui.ButtonWidth(L"Download and install", glyph::kDownload);
+      const float install_width = ui.ButtonWidth(T(L"Download and install"), glyph::kDownload);
       if (ui.Button(L"versions.install", D2D1::RectF(cx, cy, cx + install_width, cy + theme::kButtonHeight),
-                    L"Download and install", ButtonStyle::kStandard,
+                    T(L"Download and install"), ButtonStyle::kStandard,
                     chosen && !chosen_installed && possible && !PackageWorkRunning() && !cache_.clearing, glyph::kDownload,
-                    L"Downloads the selected version, checks that it is Roblox’s own file and installs it")) {
+                    T(L"Downloads the selected version, checks that it is Roblox’s own file and installs it"))) {
         Defer([this] { InstallSelectedRobloxVersion(); });
       }
       if (roblox_update_.stage == RobloxUpdateFlow::Stage::kFailed && roblox_update_.chosen) {
@@ -835,7 +869,7 @@ float App::BuildRobloxVersions(Ui& ui, float x, float y, float width) {
 }
 
 float App::BuildRobloxUpdates(Ui& ui, float x, float y, float width) {
-  y = SectionTitle(ui, x, y, width, L"Roblox updates");
+  y = SectionTitle(ui, x, y, width, T(L"Roblox updates"));
   const float cx = x + theme::kCardPadding;
   const float cw = width - 2.0f * theme::kCardPadding;
   D2D1_RECT_F control{};
@@ -850,9 +884,9 @@ float App::BuildRobloxUpdates(Ui& ui, float x, float y, float width) {
   if (updating) {
     status = RobloxUpdateStatus();
   } else if (checking) {
-    status = L"Checking for Roblox updates…";
+    status = T(L"Checking for Roblox updates…");
   } else if (roblox_update_.stage == RobloxUpdateFlow::Stage::kFailed) {
-    status = L"Roblox wasn’t updated. " + roblox_update_.error;
+    status = TF(L"Roblox wasn’t updated. {0}", roblox_update_.error);
     newer = installed && roblox_version_.latest && roblox_version_.latest->version_code > config_.installed.version_code;
   } else if (!roblox_version_.error.empty()) {
     status = roblox_version_.error;
@@ -860,29 +894,29 @@ float App::BuildRobloxUpdates(Ui& ui, float x, float y, float width) {
     const auto& latest = *roblox_version_.latest;
     const std::wstring version = Utf8ToWide(latest.version_name);
     if (!installed) {
-      status = L"Latest known version is " + version + L".";
+      status = TF(L"Latest known version is {0}.", version);
     } else if (latest.version_code == config_.installed.version_code) {
-      status = L"Roblox is up to date.";
+      status = T(L"Roblox is up to date.");
     } else if (latest.version_code < config_.installed.version_code) {
-      status = L"Your installed version is newer than " + version + L".";
+      status = TF(L"Your installed version is newer than {0}.", version);
     } else {
       newer = true;
-      status = L"Roblox " + version + L" is available." +
-               (can_update ? std::wstring() : std::wstring(L" Install it from a file to update."));
+      status = can_update ? TF(L"Roblox {0} is available.", version)
+                          : TF(L"Roblox {0} is available. Install it from a file to update.", version);
     }
   } else {
-    status = L"Check for a newer version of Roblox.";
+    status = T(L"Check for a newer version of Roblox.");
   }
   if (!checking && !updating && roblox_update_.stage != RobloxUpdateFlow::Stage::kFailed &&
       config_.roblox.last_check > 0 && roblox_version_.error.empty()) {
-    status += L" Last checked at " + FormatLocalClockTime(config_.roblox.last_check, UnixNow()) + L".";
+    status = TF(L"{0} Last checked at {1}.", status, FormatLocalClockTime(config_.roblox.last_check, UnixNow()));
   }
-  const std::wstring title = installed ? L"Installed Roblox " + Utf8ToWide(config_.installed.version_name)
-                                       : L"Roblox isn’t installed";
+  const std::wstring title = installed ? TF(L"Installed Roblox {0}", Utf8ToWide(config_.installed.version_name))
+                                       : T(L"Roblox isn’t installed");
   const bool offer_update = newer && can_update && !updating;
-  const wchar_t* const button_label = offer_update ? L"Update now" : L"Check now";
+  const std::wstring& button_label = offer_update ? T(L"Update now") : T(L"Check now");
   const float check_width =
-      std::max(ui.ButtonWidth(L"Check now", glyph::kRefresh), ui.ButtonWidth(L"Update now", glyph::kRefresh));
+      std::max(ui.ButtonWidth(T(L"Check now"), glyph::kRefresh), ui.ButtonWidth(T(L"Update now"), glyph::kRefresh));
   cy = SettingRow(ui, cx, cy, cw, title, status, check_width, 32.0f, &control, true);
   if (offer_update) {
     if (ui.Button(L"roblox.update.install", control, button_label, ButtonStyle::kStandard,
@@ -895,31 +929,31 @@ float App::BuildRobloxUpdates(Ui& ui, float x, float y, float width) {
   }
 
   if (can_update) {
-    cy = SettingRow(ui, cx, cy, cw, L"Update Roblox automatically",
-                    L"Installs a newer version when Elixir starts. Your data is kept.",
-                    96.0f, 32.0f, &control, false);
-    if (ui.Toggle(L"roblox.update.auto", control, &config_.roblox.auto_update, L"Update Roblox automatically")) {
+    cy = SettingRow(ui, cx, cy, cw, T(L"Update Roblox automatically"),
+                    T(L"Installs a newer version when Elixir starts. Your data is kept."),
+                    ui.ToggleWidth(), 32.0f, &control, false);
+    if (ui.Toggle(L"roblox.update.auto", control, &config_.roblox.auto_update, T(L"Update Roblox automatically"))) {
       SaveConfig();
     }
   }
 
-  cy = SettingRow(ui, cx, cy, cw, L"Check when Elixir starts",
-                  L"Notify me when a newer version of Roblox is available.",
-                  96.0f, 32.0f, &control, false);
+  cy = SettingRow(ui, cx, cy, cw, T(L"Check when Elixir starts"),
+                  T(L"Notify me when a newer version of Roblox is available."),
+                  ui.ToggleWidth(), 32.0f, &control, false);
   if (ui.Toggle(L"roblox.update.startup", control, &config_.roblox.check_for_new_version,
-                L"Check for new Roblox versions when Elixir starts")) {
+                T(L"Check for new Roblox versions when Elixir starts"))) {
     SaveConfig();
   }
 
   const InstalledApp& previous = config_.roblox.previous;
   if (previous.present() && previous.package == config_.installed.package) {
     const bool on_disk = PathIsDirectory(Utf8ToWide(previous.install_dir));
-    const float back_width = ui.ButtonWidth(L"Roll back");
-    cy = SettingRow(ui, cx, cy, cw, L"Roll back to Roblox " + Utf8ToWide(previous.version_name),
-                    on_disk ? L"Goes back to the version you had before the last update."
-                            : L"That version is no longer available.",
+    const float back_width = ui.ButtonWidth(T(L"Roll back"));
+    cy = SettingRow(ui, cx, cy, cw, TF(L"Roll back to Roblox {0}", Utf8ToWide(previous.version_name)),
+                    on_disk ? T(L"Goes back to the version you had before the last update.")
+                            : T(L"That version is no longer available."),
                     back_width, 32.0f, &control, false);
-    if (ui.Button(L"roblox.rollback", control, L"Roll back", ButtonStyle::kStandard,
+    if (ui.Button(L"roblox.rollback", control, T(L"Roll back"), ButtonStyle::kStandard,
                   on_disk && !PackageWorkRunning() && !runtime_.running)) {
       Defer([this] { AskRollBackRoblox(); });
     }
@@ -932,9 +966,9 @@ float App::BuildCacheCard(Ui& ui, float x, float y, float width) {
   const float cw = width - 2.0f * theme::kCardPadding;
   const int card = ui.BeginCard(x, y, width);
   float cy = y + 18.0f;
-  cy += ui.Text(cx, cy, cw, L"Free up space", TextStyle::kCardTitle, theme::kText) + 6.0f;
+  cy += ui.Text(cx, cy, cw, T(L"Free up space"), TextStyle::kCardTitle, theme::kText) + 6.0f;
   cy += ui.Text(cx, cy, cw,
-                L"Roblox downloads what it needs again. Your sign-in, settings and Fast Flags are kept.",
+                T(L"Roblox downloads what it needs again. Your sign-in, settings and Fast Flags are kept."),
                 TextStyle::kSecondary, theme::kTextSecondary) + 12.0f;
   std::uint64_t total = 0;
   const float size_width = 110.0f;
@@ -942,7 +976,7 @@ float App::BuildCacheCard(Ui& ui, float x, float y, float width) {
     total += location.bytes;
     const float title_height = ui.Text(cx, cy, cw - size_width - 16.0f, location.title, TextStyle::kBody, theme::kText);
     const std::wstring description =
-        location.redirected ? std::wstring(L"Skipped: this folder points somewhere else.")
+        location.redirected ? std::wstring(T(L"Skipped: this folder points somewhere else."))
                             : location.description;
     const float description_height = ui.Text(cx, cy + title_height + 1.0f, cw - size_width - 16.0f, description,
                                              TextStyle::kCaption, location.redirected ? theme::kWarn : theme::kTextTertiary);
@@ -956,7 +990,7 @@ float App::BuildCacheCard(Ui& ui, float x, float y, float width) {
     cy += title_height + description_height + 10.0f;
   }
   if (cache_.locations.empty()) {
-    cy += ui.Text(cx, cy, cw, cache_.measured ? L"No cache folders." : L"Measuring…", TextStyle::kSecondary,
+    cy += ui.Text(cx, cy, cw, cache_.measured ? T(L"No cache folders.") : T(L"Measuring…"), TextStyle::kSecondary,
                   theme::kTextTertiary) + 10.0f;
   }
   const bool running = RuntimeRunning();
@@ -964,15 +998,15 @@ float App::BuildCacheCard(Ui& ui, float x, float y, float width) {
   ui.Fill(D2D1::RectF(cx, cy, cx + cw, cy + 1.0f), theme::kDivider);
   cy += 12.0f;
   ButtonFlow flow(ui, cx, cx + cw, cy);
-  if (flow.Add(L"cache.clear", L"Clear cache…", ButtonStyle::kDanger,
+  if (flow.Add(L"cache.clear", T(L"Clear cache…"), ButtonStyle::kDanger,
                !running && !working && !cache_.clearing && cache_.measured && total > 0, glyph::kBroom,
-               L"Asks before deleting anything")) {
+               T(L"Asks before deleting anything"))) {
     Defer([this] { AskClearCaches(); });
   }
   cy = flow.bottom() + 10.0f;
-  std::wstring status = cache_.measured ? std::wstring(L"Total ") + FormatByteSize(total) + L"." : std::wstring(L"Measuring…");
-  if (running) status += L" Close Roblox to clear the cache.";
-  if (working) status += L" Wait for Roblox to finish installing.";
+  std::wstring status = cache_.measured ? TF(L"Total {0}.", FormatByteSize(total)) : T(L"Measuring…");
+  if (running) status += L" " + T(L"Close Roblox to clear the cache.");
+  if (working) status += L" " + T(L"Wait for Roblox to finish installing.");
   cy += ui.Text(cx, cy, cw, status, TextStyle::kSecondary, running ? theme::kWarn : theme::kTextSecondary);
   if (!cache_.message.empty()) {
     const float height = ui.Text(cx, cy + 6.0f, cw, cache_.message, TextStyle::kSecondary,

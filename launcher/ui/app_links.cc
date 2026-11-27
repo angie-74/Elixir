@@ -8,6 +8,7 @@
 #include "core/process.h"
 #include "core/roblox_links.h"
 #include "core/util.h"
+#include "core/i18n.h"
 #include "ui/app.h"
 
 namespace elixir::launcher::ui {
@@ -38,7 +39,7 @@ void App::OpenLink(LinkRequest request) {
       case LinkRequestKind::kOpenApp:
         break;
       case LinkRequestKind::kInvalid:
-        ShowToast(L"This Roblox link can’t be opened in Elixir.");
+        ShowToast(T(L"This Roblox link can’t be opened in Elixir."));
         break;
     }
   });
@@ -60,17 +61,17 @@ void App::OnLinkRequest(std::string launch_request) {
   if (runtime_.running) {
     if (runtime_.stopping) {
       DropPendingJoin();
-      ShowToast(L"Roblox is closing. Open the link again in a moment.");
+      ShowToast(T(L"Roblox is closing. Open the link again in a moment."));
       return;
     }
     if (runtime_.in_game) {
       Overlay overlay;
       overlay.id = L"join.leave";
       overlay.status = 1;
-      overlay.title = L"Leave this experience?";
-      overlay.body = L"Roblox will leave the experience you’re in and join the one you opened.";
-      overlay.actions = {{L"join.confirm", L"Join", ButtonStyle::kStandard},
-                         {L"overlay.close", L"Stay", ButtonStyle::kStandard}};
+      overlay.title = T(L"Leave this experience?");
+      overlay.body = T(L"Roblox will leave the experience you’re in and join the one you opened.");
+      overlay.actions = {{L"join.confirm", T(L"Join"), ButtonStyle::kStandard},
+                         {L"overlay.close", T(L"Stay"), ButtonStyle::kStandard}};
       ShowOverlay(std::move(overlay));
       return;
     }
@@ -97,7 +98,7 @@ void App::SendPendingJoin() {
   }
   const bool sent = SendRuntimeJoin(runtime_.ipc_pipe, join.request);
   SecureZeroMemory(join.request.data(), join.request.capacity());
-  ShowToast(sent ? L"Joining the experience…" : L"Couldn’t join the experience. Open the link again.");
+  ShowToast(sent ? T(L"Joining the experience…") : T(L"Couldn’t join the experience. Open the link again."));
 }
 
 void App::DropPendingJoin() {
@@ -112,11 +113,11 @@ void App::OnJoinEvent(const std::string& state) {
   } else if (state == "left") {
     runtime_.in_game = false;
   } else if (state == "waiting-for-sign-in") {
-    ShowToast(L"Sign in to Roblox to join the experience.");
+    ShowToast(T(L"Sign in to Roblox to join the experience."));
   } else if (state == "busy") {
-    ShowToast(L"Roblox is busy. Open the link again in a moment.");
+    ShowToast(T(L"Roblox is busy. Open the link again in a moment."));
   } else if (state == "rejected") {
-    ShowToast(L"Roblox couldn’t join that experience.");
+    ShowToast(T(L"Roblox couldn’t join that experience."));
   }
 }
 
@@ -145,27 +146,38 @@ void App::RefreshInstanceAccounts() {
   }
 }
 
-void App::RefreshAccountPictures() {
+void App::PrefetchAccountPictures() {
+  RefreshInstanceAccounts();
+  RefreshAccountPictures();
+}
+
+void App::RefreshAccountPictures(int more_rounds, bool wait_first) {
   constexpr ULONGLONG kCheckEveryMs = 60000;
+  constexpr DWORD kPendingWaitMs = 700;
   const HttpGetFunction get = WebGet();
   if (!get || account_pictures_loading_ || instance_accounts_.empty()) return;
   const bool missing = std::any_of(instance_accounts_.begin(), instance_accounts_.end(),
                                    [](const InstanceAccountRow& row) { return row.account.picture_file.empty(); });
   const ULONGLONG now = GetTickCount64();
-  if (!missing && account_pictures_checked_ != 0 && now - account_pictures_checked_ < kCheckEveryMs) return;
+  if (!wait_first && !missing && account_pictures_checked_ != 0 && now - account_pictures_checked_ < kCheckEveryMs) {
+    return;
+  }
   account_pictures_loading_ = true;
   account_pictures_checked_ = now;
   std::vector<SavedAccount> accounts;
   for (const InstanceAccountRow& row : instance_accounts_) accounts.push_back(row.account);
   const std::wstring folder = paths_.accounts_dir;
-  RunInBackground([this, folder, accounts, get]() -> std::function<void()> {
-    const int changed = elixir::launcher::RefreshAccountPictures(folder, accounts, get);
-    return [this, changed] {
+  RunInBackground([this, folder, accounts, get, more_rounds, wait_first]() -> std::function<void()> {
+    if (wait_first) Sleep(kPendingWaitMs);
+    bool pending = false;
+    const int changed = elixir::launcher::RefreshAccountPictures(folder, accounts, get, &pending);
+    return [this, changed, pending, more_rounds] {
       account_pictures_loading_ = false;
-      if (changed > 0 && MenuOpen(kInstanceAccountControl)) {
+      if (changed > 0) {
         RefreshInstanceAccounts();
         Invalidate();
       }
+      if (pending && more_rounds > 0) RefreshAccountPictures(more_rounds - 1, true);
     };
   });
 }
@@ -185,55 +197,111 @@ void App::ChooseInstanceAccount() {
   RefreshAccountPictures();
 }
 
+void App::ChoosePlayAccount() {
+  if (runtime_.running) return;
+  if (MenuOpen(kPlayAccountControl)) {
+    CloseMenu();
+    return;
+  }
+  if (!PathIsFile(paths_.runtime_exe) || !config_.installed.present() || switching_) {
+    Play();
+    return;
+  }
+  RefreshInstanceAccounts();
+  const int count = static_cast<int>(instance_accounts_.size());
+  const std::wstring current = SignedInAccountId(paths_.data_root);
+  const bool unknown = current.empty() && HasSavedSignIn(paths_.data_root);
+  const bool another = count == 1 && !unknown && instance_accounts_[0].account.id != current;
+  if (count < 2 && !another) {
+    Play();
+    return;
+  }
+  int focus = 0;
+  for (int i = 0; i < count; ++i) {
+    if (instance_accounts_[static_cast<std::size_t>(i)].account.id == current) focus = i;
+  }
+  SetMenu(kPlayAccountControl, focus, count + 1);
+  RefreshAccountPictures();
+}
+
+void App::PlayWith(const InstanceAccount& account, const std::wstring& account_id) {
+  if (runtime_.running) return;
+  std::wstring error;
+  if (!PrepareMainAccount(paths_, account, account_id, &error)) {
+    ShowToast(TF(L"Couldn’t switch accounts: {0}.", error));
+    return;
+  }
+  Play();
+}
+
 void App::StartInstanceWith(int row) {
   const int count = static_cast<int>(instance_accounts_.size());
-  if (row < 0 || row > count || !MenuOpen(kInstanceAccountControl)) return;
+  const bool for_play = MenuOpen(kPlayAccountControl);
+  if (row < 0 || row > count || !AccountMenuOpen()) return;
   InstanceAccount account;
   AccountUse use = AccountUse::kNotOpen;
   std::wstring name;
+  std::wstring id;
   if (row < count) {
     const SavedAccount& saved = instance_accounts_[static_cast<std::size_t>(row)].account;
     account.sign_in = InstanceSignIn::kSavedAccount;
     account.session_file = saved.session_file;
     use = QueryAccountUse(saved.id);
     name = SavedAccountName(saved);
+    id = saved.id;
   } else {
     account.sign_in = InstanceSignIn::kSignedOut;
   }
   CloseMenu();
   if (use == AccountUse::kNotOpen) {
-    OpenAnotherWindow(account);
+    if (for_play) {
+      PlayWith(account, id);
+    } else {
+      OpenAnotherWindow(account);
+    }
     return;
   }
   pending_instance_account_ = account;
+  pending_account_id_ = id;
+  pending_account_for_play_ = for_play;
   Overlay overlay;
   overlay.id = L"instance.in-use";
   overlay.status = 1;
   if (use == AccountUse::kInGame) {
-    overlay.title = name + L" is in a game";
-    overlay.body = L"This account is playing in another Roblox window. If the new window joins a game too, "
-                   L"Roblox disconnects the other one.";
+    overlay.title = TF(L"{0} is in a game", name);
+    overlay.body = T(L"This account is playing in another Roblox window. If the new window joins a game too, "
+                   L"Roblox disconnects the other one.");
   } else {
-    overlay.title = name + L" is already open";
-    overlay.body = L"This account is signed in in another Roblox window. If both join a game, Roblox "
-                   L"disconnects one of them.";
+    overlay.title = TF(L"{0} is already open", name);
+    overlay.body = T(L"This account is signed in in another Roblox window. If both join a game, Roblox "
+                   L"disconnects one of them.");
   }
-  overlay.actions = {{L"instance.open", L"Open anyway", ButtonStyle::kStandard},
-                     {L"overlay.close", L"Cancel", ButtonStyle::kStandard}};
+  overlay.actions = {{L"instance.open", T(L"Open anyway"), ButtonStyle::kStandard},
+                     {L"overlay.close", T(L"Cancel"), ButtonStyle::kStandard}};
   ShowOverlay(std::move(overlay));
 }
 
 bool App::OnInstanceOverlayAction(const std::wstring& id) {
   if (id != L"instance.open") return false;
   const InstanceAccount account = pending_instance_account_;
+  const std::wstring account_id = pending_account_id_;
+  const bool for_play = pending_account_for_play_;
   pending_instance_account_ = {};
+  pending_account_id_.clear();
+  pending_account_for_play_ = false;
   CloseOverlay();
-  if (account.sign_in != InstanceSignIn::kKeep) OpenAnotherWindow(account);
+  if (account.sign_in == InstanceSignIn::kKeep) return true;
+  if (for_play) {
+    PlayWith(account, account_id);
+  } else {
+    OpenAnotherWindow(account);
+  }
   return true;
 }
 
 void App::RemoveInstanceAccount(int row) {
-  if (row < 0 || row >= static_cast<int>(instance_accounts_.size()) || !MenuOpen(kInstanceAccountControl)) return;
+  if (row < 0 || row >= static_cast<int>(instance_accounts_.size()) || !AccountMenuOpen()) return;
+  const std::wstring control = menu_control_;
   const SavedAccount account = instance_accounts_[static_cast<std::size_t>(row)].account;
   std::wstring error;
   if (!RemoveSavedAccount(paths_.accounts_dir, account.id, &error)) {
@@ -245,16 +313,16 @@ void App::RemoveInstanceAccount(int row) {
   if (count == 0) {
     CloseMenu();
   } else {
-    SetMenu(kInstanceAccountControl, std::min(row, count), count + 1);
+    SetMenu(control, std::min(row, count), count + 1);
   }
-  ShowToast(L"Removed " + SavedAccountLabel(account) + L".");
+  ShowToast(TF(L"Removed {0}.", SavedAccountLabel(account)));
 }
 
 void App::OpenAnotherWindow(InstanceAccount account) {
   if (!runtime_.running || runtime_.stopping || opening_window_) return;
   const int number = FreeWindowNumber();
   if (number == 0) {
-    ShowToast(L"Elixir opens up to " + std::to_wstring(kMaxRobloxWindows) + L" Roblox instances.");
+    ShowToast(TF(L"Elixir opens up to {0} Roblox instances.", kMaxRobloxWindows));
     return;
   }
   opening_window_ = true;
@@ -267,17 +335,17 @@ void App::OpenAnotherWindow(InstanceAccount account) {
     return [this, config, paths, number, prepared, error] {
       opening_window_ = false;
       if (!prepared) {
-        ShowToast(L"Couldn’t open another Roblox instance: " + error + L".");
+        ShowToast(TF(L"Couldn’t open another Roblox instance: {0}.", error));
         return;
       }
       const RuntimeLaunch launch = LaunchInstance(config, paths, number);
       if (!launch.ok) {
-        ShowToast(launch.error.empty() ? std::wstring(L"Couldn’t open another Roblox instance.")
-                                       : L"Couldn’t open another Roblox window. " + launch.error);
+        ShowToast(launch.error.empty() ? T(L"Couldn’t open another Roblox instance.")
+                                       : TF(L"Couldn’t open another Roblox window. {0}", launch.error));
         return;
       }
       extra_windows_.push_back(ExtraWindow{number, launch.process});
-      ShowToast(L"Opening Roblox instance " + std::to_wstring(number) + L"…");
+      ShowToast(TF(L"Opening Roblox instance {0}…", number));
     };
   });
 }

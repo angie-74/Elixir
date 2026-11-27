@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0
 
 #include "core/util.h"
+#include "core/i18n.h"
 
 #include <shlobj.h>
 #include <shlwapi.h>
@@ -83,39 +84,39 @@ std::wstring ErrorCause(DWORD code) {
   switch (code) {
     case ERROR_DISK_FULL:
     case ERROR_HANDLE_DISK_FULL:
-      return L"Not enough disk space.";
+      return T(L"Not enough disk space.");
     case ERROR_ACCESS_DENIED:
     case ERROR_PRIVILEGE_NOT_HELD:
-      return L"Windows denied access.";
+      return T(L"Windows denied access.");
     case ERROR_SHARING_VIOLATION:
     case ERROR_LOCK_VIOLATION:
     case ERROR_USER_MAPPED_FILE:
-      return L"Another program is using the file.";
+      return T(L"Another program is using the file.");
     case ERROR_FILE_NOT_FOUND:
     case ERROR_PATH_NOT_FOUND:
-      return L"A file or folder is missing.";
+      return T(L"A file or folder is missing.");
     case ERROR_WRITE_PROTECT:
-      return L"The drive is read-only.";
+      return T(L"The drive is read-only.");
     case ERROR_NOT_READY:
     case ERROR_BAD_NETPATH:
     case ERROR_NETNAME_DELETED:
     case ERROR_DEV_NOT_EXIST:
-      return L"The drive isn’t available.";
+      return T(L"The drive isn’t available.");
     case ERROR_NOT_ENOUGH_MEMORY:
     case ERROR_OUTOFMEMORY:
-      return L"Not enough memory.";
+      return T(L"Not enough memory.");
     case ERROR_VIRUS_INFECTED:
     case ERROR_VIRUS_DELETED:
-      return L"Your antivirus blocked the file.";
+      return T(L"Your antivirus blocked the file.");
     case 12007:
     case 12029:
     case 12030:
-      return L"No internet connection.";
+      return T(L"No internet connection.");
     case 12002:
-      return L"The connection timed out.";
+      return T(L"The connection timed out.");
     case 12157:
     case 12175:
-      return L"A secure connection couldn’t be made.";
+      return T(L"A secure connection couldn’t be made.");
     default:
       return {};
   }
@@ -175,7 +176,7 @@ bool PathsEqual(std::wstring_view a, std::wstring_view b) {
 
 bool EnsureDirectory(const std::wstring& path, std::wstring* error) {
   if (path.empty()) {
-    if (error) *error = L"A folder couldn’t be created.";
+    if (error) *error = T(L"A folder couldn’t be created.");
     return false;
   }
   if (PathIsDirectory(path)) return true;
@@ -185,10 +186,10 @@ bool EnsureDirectory(const std::wstring& path, std::wstring* error) {
   }
   if (CreateDirectoryW(path.c_str(), nullptr) || GetLastError() == ERROR_ALREADY_EXISTS) {
     if (PathIsDirectory(path)) return true;
-    if (error) *error = L"A folder couldn’t be created because a file is in the way.";
+    if (error) *error = T(L"A folder couldn’t be created because a file is in the way.");
     return false;
   }
-  if (error) *error = WithErrorCause(L"A folder couldn’t be created.", GetLastError());
+  if (error) *error = WithErrorCause(T(L"A folder couldn’t be created."), GetLastError());
   return false;
 }
 
@@ -298,7 +299,7 @@ bool ReadFileBytes(const std::wstring& path, std::string* out, std::wstring* err
   const auto report = [error](DWORD code) {
     if (error == nullptr) return;
     *error = ErrorCause(code);
-    if (error->empty()) *error = L"Windows couldn’t read the file.";
+    if (error->empty()) *error = T(L"Windows couldn’t read the file.");
   };
   HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                             nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
@@ -313,7 +314,7 @@ bool ReadFileBytes(const std::wstring& path, std::string* out, std::wstring* err
     return false;
   }
   if (static_cast<std::uint64_t>(size.QuadPart) > max_bytes) {
-    if (error) *error = L"The file is too large.";
+    if (error) *error = T(L"The file is too large.");
     CloseHandle(file);
     return false;
   }
@@ -375,7 +376,7 @@ bool AtomicWriteFile(const std::wstring& path, std::string_view data, AtomicWrit
   const auto report = [error](DWORD code) {
     if (error == nullptr) return;
     *error = ErrorCause(code);
-    if (error->empty()) *error = L"Windows couldn’t save the file.";
+    if (error->empty()) *error = T(L"Windows couldn’t save the file.");
   };
 
   static std::atomic<unsigned> counter{0};

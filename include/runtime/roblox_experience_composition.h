@@ -268,7 +268,7 @@ class RobloxExperienceComposition final {
   bool lua_app_surface_recreation_pending_ = false;
   bool late_surface_tracking_ = false;
   GameSurface late_surface_snapshot_;
-  float game_render_scale_ = 1.0f;
+  elixir::RenderScale game_render_scale_;
   jnivm::VM* late_lifecycle_vm_ = nullptr;
 };
 

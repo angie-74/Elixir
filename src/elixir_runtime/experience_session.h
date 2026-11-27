@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 
+#include "graphics/render_scale.h"
 #include "runtime/roblox_experience_presence.h"
 
 namespace jnivm {
@@ -21,7 +22,7 @@ namespace elixir::runtime {
 struct ExperienceSessionOptions {
   std::string asset_folder_path;
   float dpi_scale = 1.0f;
-  float game_render_scale = 1.0f;
+  RenderScale game_render_scale;
   bool touch_enabled = false;
   bool mouse_enabled = true;
   bool keyboard_enabled = true;

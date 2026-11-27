@@ -5,12 +5,16 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cwchar>
 #include <optional>
 #include <string_view>
+#include <system_error>
+#include <thread>
 
 #include "core/json.h"
 #include "core/util.h"
+#include "core/i18n.h"
 #include "elixir_runtime/account_use.h"
 
 namespace elixir::launcher {
@@ -156,16 +160,16 @@ AccountUse QueryAccountUse(const std::wstring& account_id) {
 }
 
 bool RemoveSavedAccount(const std::wstring& accounts_dir, const std::wstring& account_id, std::wstring* error) {
-  const auto fail = [error](const wchar_t* text) {
+  const auto fail = [error](const std::wstring& text) {
     if (error != nullptr) *error = text;
     return false;
   };
-  if (accounts_dir.empty() || !IsAccountId(account_id)) return fail(L"That account isn’t in the list.");
+  if (accounts_dir.empty() || !IsAccountId(account_id)) return fail(T(L"That account isn’t in the list."));
   const std::wstring folder = JoinPath(accounts_dir, account_id);
-  if (!IsRealFolder(accounts_dir) || !IsRealFolder(folder)) return fail(L"That account isn’t in the list.");
+  if (!IsRealFolder(accounts_dir) || !IsRealFolder(folder)) return fail(T(L"That account isn’t in the list."));
   const std::wstring session = JoinPath(folder, kAccountSessionFile);
   if (GetFileAttributesW(session.c_str()) != INVALID_FILE_ATTRIBUTES && !DeleteFileW(session.c_str())) {
-    return fail(L"The saved sign-in couldn’t be removed.");
+    return fail(T(L"The saved sign-in couldn’t be removed."));
   }
   for (const std::wstring& picture : PictureFiles(folder)) DeleteFileW(picture.c_str());
   DeleteFileW(JoinPath(folder, kAccountPictureDetailsFile).c_str());
@@ -176,8 +180,27 @@ bool RemoveSavedAccount(const std::wstring& accounts_dir, const std::wstring& ac
   return true;
 }
 
+static bool SaveAccountPicture(const std::wstring& folder, const std::string& url, const HttpGetFunction& get) {
+  const std::wstring target = JoinPath(folder, PictureName(url));
+  const HttpResult picture = get(Utf8ToWide(url), kMaxPictureBytes);
+  if (!picture.ok || picture.body.size() <= kPngSignature.size() ||
+      std::string_view(picture.body).substr(0, kPngSignature.size()) != kPngSignature) {
+    return false;
+  }
+  if (!AtomicWriteFile(target, picture.body, AtomicWriteBackup::kNone, nullptr)) return false;
+  Json details = Json::MakeObject();
+  details.Set("url", Json(url));
+  AtomicWriteFile(JoinPath(folder, kAccountPictureDetailsFile), details.Dump() + "\n", AtomicWriteBackup::kNone,
+                  nullptr);
+  for (const std::wstring& old_picture : PictureFiles(folder)) {
+    if (!PathsEqual(old_picture, target)) DeleteFileW(old_picture.c_str());
+  }
+  return true;
+}
+
 int RefreshAccountPictures(const std::wstring& accounts_dir, const std::vector<SavedAccount>& accounts,
-                           const HttpGetFunction& get) {
+                           const HttpGetFunction& get, bool* pending) {
+  if (pending != nullptr) *pending = false;
   if (!get || accounts_dir.empty() || accounts.empty()) return 0;
   std::wstring ids;
   for (const SavedAccount& account : accounts) {
@@ -193,34 +216,51 @@ int RefreshAccountPictures(const std::wstring& accounts_dir, const std::vector<S
   const std::optional<Json> listing = Json::Parse(answer.body, nullptr);
   const Json* data = listing && listing->is_object() ? listing->Find("data") : nullptr;
   if (data == nullptr || !data->is_array()) return 0;
-  int changed = 0;
+  struct Wanted {
+    std::wstring folder;
+    std::string url;
+  };
+  std::vector<Wanted> wanted;
   for (const Json& item : data->items()) {
-    if (!item.is_object() || item.GetString("state") != "Completed") continue;
+    if (!item.is_object()) continue;
     const std::wstring id = std::to_wstring(item.GetInt("targetId", 0));
     const auto account = std::find_if(accounts.begin(), accounts.end(),
                                       [&id](const SavedAccount& candidate) { return candidate.id == id; });
-    const std::string url = item.GetString("imageUrl");
-    if (account == accounts.end() || !IsRobloxImageUrl(url)) continue;
-    const std::wstring folder = JoinPath(accounts_dir, id);
-    const std::wstring target = JoinPath(folder, PictureName(url));
-    if (!IsRealFolder(folder)) continue;
-    if (SavedPictureUrl(folder) == url && IsPlainFile(target, kPngSignature.size(), kMaxPictureBytes)) continue;
-    const HttpResult picture = get(Utf8ToWide(url), kMaxPictureBytes);
-    if (!picture.ok || picture.body.size() <= kPngSignature.size() ||
-        std::string_view(picture.body).substr(0, kPngSignature.size()) != kPngSignature) {
+    if (account == accounts.end()) continue;
+    const std::string state = item.GetString("state");
+    if (state == "Pending") {
+      if (pending != nullptr) *pending = true;
       continue;
     }
-    if (!AtomicWriteFile(target, picture.body, AtomicWriteBackup::kNone, nullptr)) continue;
-    Json details = Json::MakeObject();
-    details.Set("url", Json(url));
-    AtomicWriteFile(JoinPath(folder, kAccountPictureDetailsFile), details.Dump() + "\n", AtomicWriteBackup::kNone,
-                    nullptr);
-    for (const std::wstring& old_picture : PictureFiles(folder)) {
-      if (!PathsEqual(old_picture, target)) DeleteFileW(old_picture.c_str());
+    const std::string url = item.GetString("imageUrl");
+    if (state != "Completed" || !IsRobloxImageUrl(url)) continue;
+    const std::wstring folder = JoinPath(accounts_dir, id);
+    if (!IsRealFolder(folder)) continue;
+    if (SavedPictureUrl(folder) == url &&
+        IsPlainFile(JoinPath(folder, PictureName(url)), kPngSignature.size(), kMaxPictureBytes)) {
+      continue;
     }
-    ++changed;
+    if (std::none_of(wanted.begin(), wanted.end(), [&folder](const Wanted& other) { return other.folder == folder; })) {
+      wanted.push_back(Wanted{folder, url});
+    }
   }
-  return changed;
+  std::atomic<int> changed{0};
+  std::vector<std::thread> workers;
+  for (std::size_t index = 1; index < wanted.size(); ++index) {
+    const Wanted& item = wanted[index];
+    try {
+      workers.emplace_back([&changed, &get, &item] {
+        if (SaveAccountPicture(item.folder, item.url, get)) changed.fetch_add(1, std::memory_order_relaxed);
+      });
+    } catch (const std::system_error&) {
+      if (SaveAccountPicture(item.folder, item.url, get)) changed.fetch_add(1, std::memory_order_relaxed);
+    }
+  }
+  if (!wanted.empty() && SaveAccountPicture(wanted[0].folder, wanted[0].url, get)) {
+    changed.fetch_add(1, std::memory_order_relaxed);
+  }
+  for (std::thread& worker : workers) worker.join();
+  return changed.load(std::memory_order_relaxed);
 }
 
 }

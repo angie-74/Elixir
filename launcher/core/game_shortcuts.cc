@@ -20,6 +20,7 @@
 #include "core/sha256.h"
 #include "core/shortcuts.h"
 #include "core/util.h"
+#include "core/i18n.h"
 
 namespace elixir::launcher {
 
@@ -208,7 +209,7 @@ bool FetchGameDetails(std::uint64_t place_id, const HttpGetFunction& get, GameDe
 
 bool WriteIconFile(std::string_view image, const std::wstring& ico_path, std::wstring* error) {
   const auto fail = [error] {
-    if (error != nullptr) *error = L"The game’s icon couldn’t be used.";
+    if (error != nullptr) *error = T(L"The game’s icon couldn’t be used.");
     return false;
   };
   if (image.empty() || image.size() > kImageLimit) return fail();
@@ -363,11 +364,11 @@ GameShortcutChange AddGameShortcut(const GameShortcutPlaces& places, std::uint64
                                    const HttpGetFunction& get) {
   GameShortcutChange change;
   if (places.folder.empty()) {
-    change.error = L"Windows didn’t say where your desktop is.";
+    change.error = T(L"Windows didn’t say where your desktop is.");
     return change;
   }
   if (place_id == 0) {
-    change.error = L"That isn’t a Roblox game link.";
+    change.error = T(L"That isn’t a Roblox game link.");
     return change;
   }
   for (const GameShortcutEntry& entry : ListGameShortcutEntries(places)) {
@@ -387,7 +388,7 @@ GameShortcutChange AddGameShortcut(const GameShortcutPlaces& places, std::uint64
   if (!EnsureDirectory(places.folder, &change.error)) return change;
   const std::wstring link = FreeLinkPath(places.folder, name);
   if (link.empty()) {
-    change.error = L"Your desktop already has shortcuts with that name.";
+    change.error = T(L"Your desktop already has shortcuts with that name.");
     return change;
   }
   ShortcutSpec spec;
@@ -412,7 +413,7 @@ GameShortcutChange RenameGameShortcut(const GameShortcutPlaces& places, const st
   ShortcutInfo info;
   if (!ReadShortcut(path, &info) || !PathsEqual(info.target, places.program) ||
       PlaceOfGameShortcut(info.arguments) == 0) {
-    change.error = L"That shortcut is gone.";
+    change.error = T(L"That shortcut is gone.");
     return change;
   }
   const bool automatic = TrimWide(name).empty();
@@ -423,7 +424,7 @@ GameShortcutChange RenameGameShortcut(const GameShortcutPlaces& places, const st
   } else {
     wanted = ShortcutFileName(name);
     if (wanted.empty()) {
-      change.error = L"A shortcut can’t have that name.";
+      change.error = T(L"A shortcut can’t have that name.");
       return change;
     }
   }
@@ -433,11 +434,11 @@ GameShortcutChange RenameGameShortcut(const GameShortcutPlaces& places, const st
   if (wanted != current) {
     const std::wstring target = JoinPath(places.folder, wanted + L".lnk");
     if (!SameName(wanted, current) && GetFileAttributesW(target.c_str()) != INVALID_FILE_ATTRIBUTES) {
-      change.error = L"Your desktop already has a shortcut with that name.";
+      change.error = T(L"Your desktop already has a shortcut with that name.");
       return change;
     }
     if (!MoveFileExW(path.c_str(), target.c_str(), 0)) {
-      change.error = WithErrorCause(L"The shortcut couldn’t be renamed.", GetLastError());
+      change.error = WithErrorCause(T(L"The shortcut couldn’t be renamed."), GetLastError());
       return change;
     }
     SHChangeNotify(SHCNE_RENAMEITEM, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, path.c_str(), target.c_str());

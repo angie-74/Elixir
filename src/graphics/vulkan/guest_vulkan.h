@@ -9,6 +9,7 @@
 #include <unordered_map>
 
 #include "abi/sysv_abi.h"
+#include "graphics/render_scale.h"
 #include "graphics/vulkan/vulkan_host_headers.h"
 
 namespace elixir::vulkan {
@@ -16,8 +17,8 @@ namespace elixir::vulkan {
 void RegisterNativeWindow(const void* anative_window, HWND hwnd);
 void UnregisterNativeWindow(const void* anative_window);
 HWND FindNativeWindow(const void* anative_window);
-void SetNativeWindowRenderScale(const void* anative_window, float scale);
-float NativeWindowRenderScale(const void* anative_window);
+void SetNativeWindowRenderScale(const void* anative_window, const RenderScale& scale);
+RenderScale NativeWindowRenderScale(const void* anative_window);
 
 using PresentHook = void (*)(VkResult result);
 void SetPresentHook(PresentHook hook);

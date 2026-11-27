@@ -20,6 +20,7 @@
 #include "core/process.h"
 #include "core/update.h"
 #include "core/util.h"
+#include "core/i18n.h"
 #include "elixir_runtime/host_main.h"
 #include "platform/windows/app_user_model_id.h"
 #include "ui/app.h"
@@ -114,15 +115,21 @@ ui::PromptResult Ask(ui::PromptSpec prompt) {
 bool AskYesNo(const std::wstring& text) {
   ui::PromptSpec prompt;
   prompt.text = text;
-  prompt.buttons = {L"Yes", L"No"};
+  prompt.buttons = {T(L"Yes"), T(L"No")};
   return Ask(std::move(prompt)).button == 0;
 }
 
 void Tell(const std::wstring& text) {
   ui::PromptSpec prompt;
   prompt.text = text;
-  prompt.buttons = {L"OK"};
+  prompt.buttons = {T(L"OK")};
   Ask(std::move(prompt));
+}
+
+void ShowBox(const std::wstring& text, UINT icon) {
+  UINT flags = icon | MB_OK;
+  if (CurrentLanguageIsRightToLeft()) flags |= MB_RTLREADING | MB_RIGHT;
+  MessageBoxW(nullptr, text.c_str(), L"Elixir", flags);
 }
 
 bool StartProgram(const std::wstring& program, const std::vector<std::wstring>& arguments) {
@@ -178,29 +185,29 @@ struct NamedLock {
 
 int RunUninstall(const InstallEnvironment& environment, const std::wstring& location, bool quiet) {
   if (location.empty()) {
-    if (!quiet) Tell(L"You must first install Elixir before uninstalling.");
+    if (!quiet) Tell(T(L"You must first install Elixir before uninstalling."));
     return kInstallFailed;
   }
   NamedLock lock(L"Local\\Elixir.Uninstaller");
   if (!lock.owned) {
-    if (!quiet) Tell(L"Please wait for uninstallation to finish.");
+    if (!quiet) Tell(T(L"Please wait for uninstallation to finish."));
     return 0;
   }
   bool keep_data = true;
   if (!quiet) {
     ui::PromptSpec prompt;
-    prompt.heading = L"Uninstall Elixir";
-    prompt.text = L"Uninstalling will remove Elixir from your system, and automatically reconfigure the default "
-                  L"Roblox launcher if it’s still installed.\n\n"
-                  L"The uninstall process may not be able to fully clean up itself, so you may need to manually "
-                  L"clean up leftover files where Elixir was installed.\n\n"
-                  L"Elixir was installed at “" +
-                  location + L"”.";
-    prompt.checkbox = L"Keep my settings and mods";
+    prompt.heading = T(L"Uninstall Elixir");
+    prompt.text = TF(L"Uninstalling will remove Elixir from your system, and automatically reconfigure the default "
+                     L"Roblox launcher if it’s still installed.\n\n"
+                     L"The uninstall process may not be able to fully clean up itself, so you may need to manually "
+                     L"clean up leftover files where Elixir was installed.\n\n"
+                     L"Elixir was installed at “{0}”.",
+                     location);
+    prompt.checkbox = T(L"Keep my settings and mods");
     prompt.checkbox_note =
-        L"They’ll be kept where Elixir was installed, and will automatically be restored on a reinstall.";
+        T(L"They’ll be kept where Elixir was installed, and will automatically be restored on a reinstall.");
     prompt.checked = true;
-    prompt.buttons = {L"Uninstall", L"Cancel"};
+    prompt.buttons = {T(L"Uninstall"), T(L"Cancel")};
     const ui::PromptResult result = Ask(std::move(prompt));
     if (result.button != 0) return 0;
     keep_data = result.checked;
@@ -211,9 +218,9 @@ int RunUninstall(const InstallEnvironment& environment, const std::wstring& loca
     if (!quiet && IsAnyRuntimeProcessRunning()) {
       ui::PromptSpec prompt;
       prompt.text =
-          L"Roblox is currently running, but must be closed before uninstalling Elixir. Would you like to close "
-          L"Roblox now?";
-      prompt.buttons = {L"OK", L"Cancel"};
+          T(L"Roblox is currently running, but must be closed before uninstalling Elixir. Would you like to close "
+          L"Roblox now?");
+      prompt.buttons = {T(L"OK"), T(L"Cancel")};
       if (Ask(std::move(prompt)).button != 0) return kCancelled;
     }
     StopProcesses(running);
@@ -228,14 +235,14 @@ int RunUninstall(const InstallEnvironment& environment, const std::wstring& loca
     DeleteFileW(installed.c_str());
     RemoveDirectoryW(location.c_str());
   }
-  if (!quiet) Tell(L"Elixir has successfully uninstalled");
+  if (!quiet) Tell(T(L"Elixir has successfully uninstalled"));
   return 0;
 }
 
 int RunInstall(const InstallEnvironment& environment, const StartFlags& flags, int argc, LPWSTR* argv) {
   NamedLock lock(L"Local\\Elixir.Installer");
   if (!lock.owned) {
-    if (!flags.quiet) Tell(L"Please wait for installation to finish.");
+    if (!flags.quiet) Tell(T(L"Please wait for installation to finish."));
     return 0;
   }
   if (flags.quiet) {
@@ -256,7 +263,7 @@ int RunInstall(const InstallEnvironment& environment, const StartFlags& flags, i
   {
     ui::App app(options);
     if (!app.Create()) {
-      MessageBoxW(nullptr, L"Elixir couldn’t open its window.", L"Elixir", MB_ICONERROR | MB_OK);
+      ShowBox(T(L"Elixir couldn’t open its window."), MB_ICONERROR);
       return kInstallFailed;
     }
     RunWindow(app);
@@ -282,14 +289,14 @@ UpgradeOutcome HandleUpgrade(const InstallEnvironment& environment, const std::w
   if (!need.differs) return UpgradeOutcome::kNotNeeded;
   const bool automatic = flags.upgrade || IsAutomaticUpgradeSource(running, location, environment);
   if (need.older && !flags.quiet &&
-      !AskYesNo(L"The version of Elixir you’ve launched is older than the version you currently have installed.\n"
+      !AskYesNo(T(L"The version of Elixir you’ve launched is older than the version you currently have installed.\n"
                 L"Issues may occur and your settings may be altered. A reinstall is recommended.\n"
-                L"Are you sure you want to continue?")) {
+                L"Are you sure you want to continue?"))) {
     return UpgradeOutcome::kDeclined;
   }
   if (!automatic && !flags.quiet &&
-      !AskYesNo(L"The version of Elixir you’ve launched is different to the version you currently have installed.\n"
-                L"Would you like to upgrade your currently installed version?")) {
+      !AskYesNo(T(L"The version of Elixir you’ve launched is different to the version you currently have installed.\n"
+                L"Would you like to upgrade your currently installed version?"))) {
     return UpgradeOutcome::kDeclined;
   }
   std::wstring error;
@@ -297,7 +304,7 @@ UpgradeOutcome HandleUpgrade(const InstallEnvironment& environment, const std::w
     if (!flags.quiet) Tell(error);
     return UpgradeOutcome::kFailed;
   }
-  if (!flags.quiet && !automatic) Tell(std::wstring(L"Elixir has been upgraded to v") + kVersion);
+  if (!flags.quiet && !automatic) Tell(TF(L"Elixir has been upgraded to v{0}", kVersion));
   return UpgradeOutcome::kUpgraded;
 }
 
@@ -359,10 +366,16 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int show_command) {
   if (FAILED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE))) return 1;
   INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_STANDARD_CLASSES};
   InitCommonControlsEx(&controls);
+  LoadLocalesFromResources();
+  SetLanguage(ResolveLanguage(SavedLanguage(options.paths.config_file)));
 
   if (!options.paths.portable && !data_dir_given) {
     const InstallEnvironment environment = SystemInstallEnvironment();
     const std::wstring location = RegisteredInstallLocation(environment);
+    if (!location.empty()) {
+      SetLanguage(ResolveLanguage(
+          SavedLanguage(LauncherPathsForDataRoot(options.paths.exe_dir, location, false).config_file)));
+    }
     int code = -1;
     if (flags.uninstall) {
       code = RunUninstall(environment, location, flags.quiet);
@@ -404,7 +417,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int show_command) {
   const std::wstring instance_key = InstanceKey(options.paths.data_root);
   if (!instance.Acquire(instance_key)) {
     if (link && link->kind == LinkRequestKind::kInvalid) {
-      MessageBoxW(nullptr, L"This Roblox link can’t be opened in Elixir.", L"Elixir", MB_ICONINFORMATION | MB_OK);
+      ShowBox(T(L"This Roblox link can’t be opened in Elixir."), MB_ICONINFORMATION);
     }
     InstanceMessage message{InstanceMessageKind::kActivate, {}};
     if (link || !initial_page.empty()) {
@@ -420,13 +433,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int show_command) {
     const bool was_link = message.kind == InstanceMessageKind::kLink;
     Wipe(&message.payload);
     if (!sent) {
-      MessageBoxW(nullptr, was_link ? L"Elixir is open but didn’t answer. Open the link again." : L"Elixir is already open.",
-                  L"Elixir", MB_ICONINFORMATION | MB_OK);
+      ShowBox(was_link ? T(L"Elixir is open but didn’t answer. Open the link again.") : T(L"Elixir is already open."),
+              MB_ICONINFORMATION);
     } else if (was_link && reply != InstanceReply::kAccepted) {
-      MessageBoxW(nullptr,
-                  reply == InstanceReply::kQueueFull ? L"Elixir is busy. Open the link again in a moment."
-                                                     : L"This Roblox link can’t be opened in Elixir.",
-                  L"Elixir", MB_ICONINFORMATION | MB_OK);
+      ShowBox(reply == InstanceReply::kQueueFull ? T(L"Elixir is busy. Open the link again in a moment.")
+                                                 : T(L"This Roblox link can’t be opened in Elixir."),
+              MB_ICONINFORMATION);
     }
     CoUninitialize();
     return 0;
@@ -440,7 +452,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int show_command) {
     ui::App app(options);
     if (!app.Create()) {
       if (link) Wipe(&link->join);
-      MessageBoxW(nullptr, L"Elixir couldn’t open its window.", L"Elixir", MB_ICONERROR | MB_OK);
+      ShowBox(T(L"Elixir couldn’t open its window."), MB_ICONERROR);
       CoUninitialize();
       return 1;
     }

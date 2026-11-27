@@ -4,7 +4,9 @@
 #include "core/config.h"
 
 #include <cmath>
+#include <optional>
 
+#include "core/i18n.h"
 #include "core/util.h"
 
 namespace elixir::launcher {
@@ -90,6 +92,7 @@ const char* ToString(PresentMode mode) { return kPresentModeNames[static_cast<in
 bool ParsePresentMode(std::string_view text, PresentMode* mode) { return ParseEnum(text, kPresentModeNames, mode); }
 
 double ResolutionScaleOrDefault(double scale) { return IsValidResolutionScale(scale) ? scale : 1.0; }
+double StretchOrDefault(double stretch) { return stretch >= 0.0 && stretch <= kStretchMax ? stretch : 0.0; }
 
 
 bool IsDiscordApplicationId(std::string_view id) {
@@ -122,6 +125,7 @@ Json ConfigToJson(const LauncherConfig& config) {
   graphics.Set("renderer", config.graphics.renderer);
   graphics.Set("present_mode", ToString(config.graphics.present_mode));
   graphics.Set("resolution_scale", ResolutionScaleOrDefault(config.graphics.resolution_scale));
+  graphics.Set("stretch", StretchOrDefault(config.graphics.stretch));
 
   Json& performance = root.Set("performance", Json::MakeObject());
   performance.Set("high_priority", config.performance.high_priority);
@@ -176,7 +180,22 @@ Json ConfigToJson(const LauncherConfig& config) {
 
   Json& ui = root.Set("ui", Json::MakeObject());
   ui.Set("last_page", config.last_page);
+  ui.Set("language", LanguageOrAutomatic(config.language));
   return root;
+}
+
+std::string LanguageOrAutomatic(std::string_view language) {
+  const LocaleInfo* locale = FindLocale(language);
+  return locale != nullptr ? std::string(locale->code) : std::string(kAutomaticLanguage);
+}
+
+std::string SavedLanguage(const std::wstring& config_file) {
+  std::string text;
+  if (!ReadFileBytes(config_file, &text, nullptr, 4u << 20)) return kAutomaticLanguage;
+  const std::optional<Json> json = Json::Parse(text, nullptr);
+  const Json* ui = json && json->is_object() ? json->Find("ui") : nullptr;
+  if (ui == nullptr || !ui->is_object()) return kAutomaticLanguage;
+  return LanguageOrAutomatic(ui->GetString("language"));
 }
 
 LauncherConfig ConfigFromJson(const Json& json, std::vector<std::string>* warnings) {
@@ -205,6 +224,14 @@ LauncherConfig ConfigFromJson(const Json& json, std::vector<std::string>* warnin
         reader.Warn("graphics.resolution_scale must be between 0.25 and 1.0; using 1.0");
       } else {
         config.graphics.resolution_scale = std::round(value * 100.0) / 100.0;
+      }
+    }
+    if (const Json* stretch = graphics->Find("stretch")) {
+      const double value = stretch->AsDouble(-1.0);
+      if (value < 0.0 || value > kStretchMax) {
+        reader.Warn("graphics.stretch must be between 0 and 0.5; using 0");
+      } else {
+        config.graphics.stretch = std::round(value * 100.0) / 100.0;
       }
     }
   }
@@ -278,6 +305,10 @@ LauncherConfig ConfigFromJson(const Json& json, std::vector<std::string>* warnin
 
   if (const Json* ui = reader.Section("ui")) {
     reader.String(ui, "ui", "last_page", &config.last_page);
+    std::string language = config.language;
+    reader.String(ui, "ui", "language", &language);
+    config.language = LanguageOrAutomatic(language);
+    if (language != config.language) reader.Warn("ui.language is not a language Elixir has; using the system's");
   }
   return config;
 }
@@ -357,15 +388,16 @@ LoadResult ConfigStore::Load() {
   std::string problem;
 
   const auto note_save_failure = [&result](const std::wstring& error) {
-    if (!result.message.empty()) result.message += L" They couldn’t be saved. ";
-    result.message += error + L" Try again.";
+    result.message = result.message.empty()
+                         ? TF(L"{0} Try again.", error)
+                         : TF(L"{0} They couldn’t be saved. {1} Try again.", result.message, error);
   };
 
   if (!PathIsFile(path_)) {
     std::string backup_problem;
     if (PathIsFile(backup) && TryLoad(backup, &result.config, &result.warnings, &backup_problem)) {
       result.outcome = LoadOutcome::kRecoveredFromBackup;
-      result.message = L"Your settings file was missing. Elixir restored your settings from a backup.";
+      result.message = T(L"Your settings file was missing. Elixir restored your settings from a backup.");
     } else {
       result.outcome = LoadOutcome::kCreatedDefaults;
     }
@@ -398,11 +430,11 @@ LoadResult ConfigStore::Load() {
   result.warnings.clear();
   if (PathIsFile(backup) && TryLoad(backup, &result.config, &result.warnings, &backup_problem)) {
     result.outcome = LoadOutcome::kRecoveredFromBackup;
-    result.message = L"Your settings file was damaged. Elixir restored your previous settings.";
+    result.message = T(L"Your settings file was damaged. Elixir restored your previous settings.");
   } else {
     result.config = LauncherConfig{};
     result.outcome = LoadOutcome::kResetToDefaults;
-    result.message = L"Your settings file was damaged. Elixir reset your settings to the defaults.";
+    result.message = T(L"Your settings file was damaged. Elixir reset your settings to the defaults.");
   }
   std::wstring error;
   result.saved = SaveRepaired(result.config, &error);

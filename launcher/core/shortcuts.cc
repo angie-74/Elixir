@@ -17,6 +17,7 @@
 
 #include "core/link_request.h"
 #include "core/util.h"
+#include "core/i18n.h"
 
 namespace elixir::launcher {
 
@@ -77,16 +78,16 @@ bool CreateShortcut(const std::wstring& link_path, const ShortcutSpec& spec, std
     return false;
   };
   ComScope com;
-  if (!com.ok()) return fail(L"The shortcut couldn’t be created.", E_FAIL);
+  if (!com.ok()) return fail(T(L"The shortcut couldn’t be created."), E_FAIL);
   Released<IShellLinkW> link;
   HRESULT hr = CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(link.out()));
-  if (FAILED(hr)) return fail(L"The shortcut couldn’t be created.", hr);
+  if (FAILED(hr)) return fail(T(L"The shortcut couldn’t be created."), hr);
   hr = link->SetPath(spec.target.c_str());
   if (SUCCEEDED(hr)) hr = link->SetArguments(spec.arguments.c_str());
   if (SUCCEEDED(hr)) hr = link->SetWorkingDirectory(ParentDirectory(spec.target).c_str());
   if (SUCCEEDED(hr)) hr = link->SetIconLocation(spec.icon.empty() ? spec.target.c_str() : spec.icon.c_str(), 0);
   if (SUCCEEDED(hr)) hr = link->SetDescription(spec.description.substr(0, INFOTIPSIZE - 1).c_str());
-  if (FAILED(hr)) return fail(L"The shortcut couldn’t be created.", hr);
+  if (FAILED(hr)) return fail(T(L"The shortcut couldn’t be created."), hr);
   if (!spec.app_id.empty()) {
     Released<IPropertyStore> properties;
     if (SUCCEEDED(link->QueryInterface(IID_PPV_ARGS(properties.out())))) {
@@ -104,9 +105,9 @@ bool CreateShortcut(const std::wstring& link_path, const ShortcutSpec& spec, std
   }
   Released<IPersistFile> file;
   hr = link->QueryInterface(IID_PPV_ARGS(file.out()));
-  if (FAILED(hr)) return fail(L"The shortcut couldn’t be created.", hr);
+  if (FAILED(hr)) return fail(T(L"The shortcut couldn’t be created."), hr);
   hr = file->Save(link_path.c_str(), TRUE);
-  if (FAILED(hr)) return fail(L"The shortcut couldn’t be saved.", hr);
+  if (FAILED(hr)) return fail(T(L"The shortcut couldn’t be saved."), hr);
   return true;
 }
 

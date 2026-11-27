@@ -19,6 +19,7 @@ add_library(elixir_launcher_core STATIC
   ${ELIXIR_LAUNCHER_DIR}/core/fflags_file.cc
   ${ELIXIR_LAUNCHER_DIR}/core/game_shortcuts.cc
   ${ELIXIR_LAUNCHER_DIR}/core/global_settings.cc
+  ${ELIXIR_LAUNCHER_DIR}/core/i18n.cc
   ${ELIXIR_LAUNCHER_DIR}/core/installer.cc
   ${ELIXIR_LAUNCHER_DIR}/core/instance.cc
   ${ELIXIR_LAUNCHER_DIR}/core/instances.cc
@@ -34,6 +35,7 @@ add_library(elixir_launcher_core STATIC
   ${ELIXIR_LAUNCHER_DIR}/core/roblox_links.cc
   ${ELIXIR_LAUNCHER_DIR}/core/roblox_update.cc
   ${ELIXIR_LAUNCHER_DIR}/core/sha256.cc
+  ${ELIXIR_LAUNCHER_DIR}/core/shared_settings.cc
   ${ELIXIR_LAUNCHER_DIR}/core/update.cc
   ${ELIXIR_LAUNCHER_DIR}/core/util.cc
 )
@@ -133,6 +135,11 @@ if(EXISTS "${ELIXIR_LAUNCHER_DIR}/ui/app.cc")
     message(WARNING "Elixir.exe is built without the guest runtime libraries and cannot start Roblox: "
                     "build them with tools/build_guest_runtime.ps1 and set ELIXIR_GUEST_RUNTIME_DIR")
   endif()
+  set(_elixir_locale_id 200)
+  foreach(_code IN ITEMS en-US pt-BR es-ES ru-RU id-ID fr-FR de-DE tr-TR pl-PL vi-VN th-TH ja-JP ko-KR zh-CN zh-TW ar-SA)
+    list(APPEND _elixir_bundle_entries "${_elixir_locale_id}|${ELIXIR_LAUNCHER_ROOT}/locales/${_code}.json")
+    math(EXPR _elixir_locale_id "${_elixir_locale_id} + 1")
+  endforeach()
   foreach(_entry IN LISTS _elixir_bundle_entries)
     string(REPLACE "|" ";" _parts "${_entry}")
     list(GET _parts 0 _id)
@@ -180,6 +187,8 @@ if(BUILD_TESTING)
     ${_elixir_launcher_tests}/instance_test.cc
     ${_elixir_launcher_tests}/link_request_test.cc
     ${_elixir_launcher_tests}/instances_test.cc
+    ${_elixir_launcher_tests}/shared_settings_test.cc
+    ${_elixir_launcher_tests}/i18n_test.cc
     ${_elixir_launcher_tests}/installer_test.cc
     ${_elixir_launcher_tests}/releases_test.cc
     ${_elixir_launcher_tests}/mods_shortcuts_test.cc
@@ -188,6 +197,12 @@ if(BUILD_TESTING)
   target_compile_definitions(elixir_launcher_core_test PRIVATE ELIXIR_SOURCE_DIR="${ELIXIR_LAUNCHER_ROOT}")
   if(TARGET elixir_apk_download)
     target_compile_definitions(elixir_launcher_core_test PRIVATE ELIXIR_WITH_ROBLOX_DOWNLOAD=1)
+  endif()
+  find_package(Python3 COMPONENTS Interpreter QUIET)
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME elixir_locales_up_to_date
+      COMMAND "${Python3_EXECUTABLE}" "${ELIXIR_LAUNCHER_ROOT}/tools/gen_locales.py" --check --complete
+      WORKING_DIRECTORY "${ELIXIR_LAUNCHER_ROOT}")
   endif()
   if(TARGET elixir_apk_fixtures)
     add_dependencies(elixir_launcher_core_test elixir_apk_fixtures)

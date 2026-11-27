@@ -18,13 +18,16 @@ bool ParsePresentMode(std::string_view text, PresentMode* mode);
 
 inline constexpr double kResolutionScaleMin = 0.25;
 inline constexpr double kResolutionScaleMax = 1.0;
+inline constexpr double kStretchMax = 0.5;
 
 double ResolutionScaleOrDefault(double scale);
+double StretchOrDefault(double stretch);
 
 struct GraphicsSettings {
   std::string renderer = "vulkan";
   PresentMode present_mode = PresentMode::kFifo;
   double resolution_scale = 1.0;
+  double stretch = 0.0;
 };
 
 struct PerformanceSettings {
@@ -94,6 +97,7 @@ struct LauncherConfig {
   RobloxSourceSettings roblox;
   InstalledApp installed;
   std::string last_page = "home";
+  std::string language = "auto";
 };
 
 inline constexpr int kConfigSchemaVersion = 2;
@@ -103,6 +107,8 @@ LauncherConfig ConfigFromJson(const Json& json, std::vector<std::string>* warnin
 int ConfigSchemaOf(const Json& json);
 std::vector<std::string> MigrateConfigJson(Json* json);
 std::string SerializeConfig(const LauncherConfig& config);
+std::string LanguageOrAutomatic(std::string_view language);
+std::string SavedLanguage(const std::wstring& config_file);
 
 bool IsHttpsUrl(std::string_view url);
 bool IsDiscordApplicationId(std::string_view id);

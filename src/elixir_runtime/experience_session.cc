@@ -19,6 +19,7 @@
 #include "elixir_runtime/host_log.h"
 #include "elixir_runtime/link_joins.h"
 #include "jnivm/jnivm.h"
+#include "mocktail/platform/platform_runtime.h"
 #include "mocktail/status.h"
 #include "runtime/auth_runtime_composition.h"
 #include "runtime/external_launch_broker.h"
@@ -43,28 +44,40 @@ namespace elixir::runtime {
 namespace {
 
 struct GameScaling {
-  float wanted = 1.0f;
+  RenderScale wanted;
   bool applied = false;
 };
 
-float GameRenderScaleForLaunch(void* context) {
+std::string DescribeScale(const RenderScale& scale) {
+  std::string text;
+  if (RendersSmaller(scale.size)) {
+    text = std::to_string(static_cast<int>(scale.size * 100.0f + 0.5f)) + "% of the window's size";
+  }
+  if (RendersSmaller(scale.width)) {
+    if (!text.empty()) text += ", ";
+    text += std::to_string(static_cast<int>((1.0f - scale.width) * 100.0f + 0.5f)) + "% narrower";
+  }
+  return text;
+}
+
+RenderScale GameRenderScaleForLaunch(void* context) {
   auto* scaling = static_cast<GameScaling*>(context);
-  if (scaling == nullptr || !RendersSmaller(scaling->wanted)) return 1.0f;
-  const int percent = static_cast<int>(scaling->wanted * 100.0f + 0.5f);
+  if (scaling == nullptr || !scaling->wanted.smaller()) return {};
 #if defined(ELIXIR_RUNTIME_HAS_VULKAN) && defined(ELIXIR_RUNTIME_HAS_ANDROID)
   if (vulkan::PresentStretchState() == vulkan::PresentStretch::kSupported) {
-    Log("[experience] resolution scale: this game renders at " + std::to_string(percent) +
-        "% of the window's size and the graphics driver stretches it");
+    Log("[experience] resolution scale: this game renders at " + DescribeScale(scaling->wanted) +
+        " and the graphics driver stretches it");
     scaling->applied = true;
+    mocktail::platform::SurfaceHorizontalScale().store(scaling->wanted.stretch(), std::memory_order_relaxed);
     return scaling->wanted;
   }
 #endif
-  Log("[experience] resolution scale: " + std::to_string(percent) +
-      "% is not used, because this graphics driver cannot stretch a smaller picture to the window");
-  return 1.0f;
+  Log("[experience] resolution scale: " + DescribeScale(scaling->wanted) +
+      " is not used, because this graphics driver cannot stretch a smaller picture to the window");
+  return {};
 }
 
-void BindSurfaceRenderScale(void*, jobject surface, float render_scale) {
+void BindSurfaceRenderScale(void*, jobject surface, RenderScale render_scale) {
 #if defined(ELIXIR_RUNTIME_HAS_ANDROID)
   android::SetSurfaceRenderScale(surface, render_scale);
 #else
@@ -75,6 +88,7 @@ void BindSurfaceRenderScale(void*, jobject surface, float render_scale) {
 
 void ResetSurfaceRenderScales(void* context) {
   if (context != nullptr) static_cast<GameScaling*>(context)->applied = false;
+  mocktail::platform::SurfaceHorizontalScale().store(1.0f, std::memory_order_relaxed);
 #if defined(ELIXIR_RUNTIME_HAS_ANDROID)
   android::ResetSurfaceRenderScales();
 #endif
@@ -304,7 +318,7 @@ std::unique_ptr<ExperienceSession> ExperienceSession::Create(void* roblox, jnivm
   surface_config.is_touch_device = options.touch_enabled;
   surface_config.is_mouse_device = options.mouse_enabled;
   surface_config.is_keyboard_device = options.keyboard_enabled;
-  impl->scaling.wanted = RendersSmaller(options.game_render_scale) ? options.game_render_scale : 1.0f;
+  impl->scaling.wanted = Normalized(options.game_render_scale);
   surface_config.scaling_context = &impl->scaling;
   surface_config.game_render_scale = &GameRenderScaleForLaunch;
   surface_config.bind_surface_scale = &BindSurfaceRenderScale;

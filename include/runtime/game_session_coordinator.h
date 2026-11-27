@@ -36,6 +36,7 @@ struct GameSurface {
   uint32_t height = 0;
   float dpi_scale = 0.0f;
   float render_scale = 1.0f;
+  float width_scale = 1.0f;
 };
 
 enum class GamePresentBackend {

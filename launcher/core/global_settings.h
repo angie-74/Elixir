@@ -24,6 +24,11 @@ bool LoadGlobalSettings(const LauncherPaths& paths, GlobalSettings* settings, st
 bool SaveGlobalSetting(const LauncherPaths& paths, GlobalSetting field, std::string_view value, std::wstring* error);
 bool SetGlobalSettingsReadOnly(const LauncherPaths& paths, bool read_only, std::wstring* error);
 
+std::wstring GlobalSettingsFile(const LauncherPaths& paths);
+bool IsGlobalSettingsText(const std::string& text);
+std::optional<std::string> MergeGlobalSettings(const std::string& base, const std::string& changed,
+                                               const std::string& current);
+
 }
 
 #endif

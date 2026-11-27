@@ -568,7 +568,7 @@ RobloxInputDispatchResult RobloxInputRouter::HandleMouseMotionLocked(
   }
   const platform::SurfaceCoordinateTransform transform =
       CoordinateTransform(snapshot_.viewport);
-  const float delta_x = transform.HostLogicalToGuestX(event.delta_x);
+  const float delta_x = transform.HostLogicalDeltaToGuestX(event.delta_x);
   const float delta_y = transform.HostLogicalToGuestY(event.delta_y);
 
   const float max_x = std::max(0.0F, transform.guest_width() - 1.0F);

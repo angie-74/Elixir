@@ -13,6 +13,7 @@
 #include "core/mods.h"
 #include "core/shortcuts.h"
 #include "core/util.h"
+#include "core/i18n.h"
 #include "platform/windows/app_user_model_id.h"
 #include "resource.h"
 #include "ui/app.h"
@@ -40,10 +41,10 @@ void App::ChooseCustomFont() {
   if (options_.test_mode || mods_.working) return;
   ComPtr<IFileOpenDialog> dialog;
   if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) return;
-  const COMDLG_FILTERSPEC filters[] = {{L"Fonts (*.ttf, *.otf, *.ttc)", L"*.ttf;*.otf;*.ttc"},
-                                       {L"All files (*.*)", L"*.*"}};
+  const COMDLG_FILTERSPEC filters[] = {{T(L"Fonts (*.ttf, *.otf, *.ttc)").c_str(), L"*.ttf;*.otf;*.ttc"},
+                                       {T(L"All files (*.*)").c_str(), L"*.*"}};
   dialog->SetFileTypes(2, filters);
-  dialog->SetTitle(L"Choose a font");
+  dialog->SetTitle(T(L"Choose a font").c_str());
   FILEOPENDIALOGOPTIONS flags = 0;
   dialog->GetOptions(&flags);
   dialog->SetOptions(flags | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST | FOS_PATHMUSTEXIST);
@@ -59,7 +60,7 @@ void App::ChooseCustomFont() {
 void App::ApplyCustomFontFile(const std::wstring& font) {
   if (mods_.working) return;
   if (!config_.installed.present()) {
-    mods_.message = L"Install Roblox first.";
+    mods_.message = T(L"Install Roblox first.");
     mods_.message_status = 1;
     Invalidate();
     return;
@@ -146,9 +147,9 @@ void App::RefreshShortcuts() {
 void App::SetElixirShortcut(bool desktop, bool on) {
   const std::wstring folder = ShortcutFolder(desktop);
   const std::wstring program = ExecutablePath();
-  const wchar_t* place = desktop ? L"desktop" : L"Start menu";
   if (folder.empty()) {
-    shortcuts_.message = std::wstring(L"Windows didn’t say where your ") + place + L" is.";
+    shortcuts_.message = desktop ? T(L"Windows didn’t say where your desktop is.")
+                                 : T(L"Windows didn’t say where your Start menu is.");
     Invalidate();
     return;
   }
@@ -159,7 +160,8 @@ void App::SetElixirShortcut(bool desktop, bool on) {
     ShortcutInfo existing;
     if (PathIsFile(link) && ReadShortcut(link, &existing) && !PathsEqual(existing.target, program)) {
       ok = false;
-      error = std::wstring(L"A shortcut named Elixir that opens something else is already on your ") + place + L".";
+      error = desktop ? T(L"A shortcut named Elixir that opens something else is already on your desktop.")
+                      : T(L"A shortcut named Elixir that opens something else is already on your Start menu.");
     } else {
       EnsureDirectory(folder, nullptr);
       ShortcutSpec spec;
@@ -170,7 +172,7 @@ void App::SetElixirShortcut(bool desktop, bool on) {
     }
   } else {
     ok = RemoveShortcut(link, program);
-    if (!ok) error = L"That shortcut couldn’t be removed.";
+    if (!ok) error = T(L"That shortcut couldn’t be removed.");
   }
   shortcuts_.message = ok ? std::wstring() : error;
   RefreshShortcuts();
@@ -224,7 +226,7 @@ void App::RemoveGameShortcut(const std::wstring& path) {
       shortcuts_.games.erase(found);
     }
   } else {
-    shortcuts_.message = L"That shortcut couldn’t be removed.";
+    shortcuts_.message = T(L"That shortcut couldn’t be removed.");
   }
   RefreshShortcuts();
   Invalidate();

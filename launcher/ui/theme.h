@@ -93,6 +93,10 @@ inline constexpr float kPageSlide = 30.0f;
 inline constexpr float kPopupMs = 167.0f;
 inline constexpr float kPopupRise = 12.0f;
 inline constexpr float kListMs = 200.0f;
+inline constexpr float kMenuSlide = 8.0f;
+inline constexpr float kNavSlideMs = 220.0f;
+inline constexpr float kImageFadeMs = 200.0f;
+inline constexpr float kProgressMs = 240.0f;
 
 inline constexpr float kWindowWidth = 1180.0f;
 inline constexpr float kWindowHeight = 760.0f;

@@ -14,6 +14,7 @@
 #include "core/paths.h"
 #include "core/sha256.h"
 #include "core/util.h"
+#include "core/i18n.h"
 
 #if defined(ELIXIR_WITH_ROBLOX_DOWNLOAD)
 #include "update/http_download.h"
@@ -283,19 +284,19 @@ GitHubApiFailure DescribeGitHubApiFailure(const GitHubApiResponse& response, std
   const auto local_time_of = [&](std::int64_t server_time) {
     return received_at + std::max<std::int64_t>(0, server_time - server_now);
   };
-  constexpr wchar_t kTooManyRequests[] = L"Too many requests right now.";
+  constexpr wchar_t kTooManyRequests[] = ELIXIR_TR(L"Too many requests right now.");
   const std::wstring message = GitHubMessage(response.body);
   std::int64_t value = 0;
   if (response.status == 403 || response.status == 429) {
     if (TrimAscii(response.ratelimit_remaining) == "0") {
       failure.rate_limited = true;
-      failure.reason = kTooManyRequests;
+      failure.reason = T(kTooManyRequests);
       if (ParseCount(response.ratelimit_reset, &value)) failure.retry_at = local_time_of(value);
       return failure;
     }
     if (!TrimAscii(response.retry_after).empty()) {
       failure.rate_limited = true;
-      failure.reason = kTooManyRequests;
+      failure.reason = T(kTooManyRequests);
       if (ParseCount(response.retry_after, &value)) {
         failure.retry_at = received_at + value;
       } else if (const std::int64_t date = ParseHttpDate(response.retry_after); date > 0) {
@@ -305,20 +306,20 @@ GitHubApiFailure DescribeGitHubApiFailure(const GitHubApiResponse& response, std
     }
     if (ToLowerAscii(WideToUtf8(message)).find("rate limit") != std::string::npos) {
       failure.rate_limited = true;
-      failure.reason = kTooManyRequests;
+      failure.reason = T(kTooManyRequests);
       failure.retry_at = received_at + 60;
       return failure;
     }
   }
   if (response.status == 0) {
-    failure.reason = L"Couldn’t connect. Check your internet connection and try again.";
+    failure.reason = T(L"Couldn’t connect. Check your internet connection and try again.");
     return failure;
   }
   if (!response.error.empty()) {
-    failure.reason = L"The connection was interrupted. Try again.";
+    failure.reason = T(L"The connection was interrupted. Try again.");
     return failure;
   }
-  failure.reason = L"The version list isn’t available right now. Try again later.";
+  failure.reason = T(L"The version list isn’t available right now. Try again later.");
   return failure;
 }
 
@@ -327,9 +328,9 @@ RobloxReleaseList ReleaseListFromGitHubResponse(const GitHubApiResponse& respons
   if (response.error.empty() && response.status >= 200 && response.status < 300) {
     std::string parse_error;
     if (!ParseGitHubReleases(response.body, &list.releases, &list.skipped, &parse_error)) {
-      list.error = L"The version list couldn’t be read. Try again later.";
+      list.error = T(L"The version list couldn’t be read. Try again later.");
     } else if (list.releases.empty()) {
-      list.error = L"No Roblox versions are available right now. Try again later.";
+      list.error = T(L"No Roblox versions are available right now. Try again later.");
     } else {
       list.ok = true;
     }
@@ -492,13 +493,13 @@ RobloxReleaseList LatestRobloxVersionFromGitHubResponse(const GitHubApiResponse&
   std::string parse_error;
   const auto json = Json::Parse(response.body, &parse_error);
   if (!json || !json->is_object() || json->GetBool("draft", true) || json->GetBool("prerelease", true)) {
-    list.error = L"The Android release tracker didn’t return a stable version. Try again later.";
+    list.error = T(L"The Android release tracker didn’t return a stable version. Try again later.");
     return list;
   }
   RobloxRelease release;
   if (!ParseCount(json->GetString("tag_name"), &release.version_code) || release.version_code <= 0 ||
       release.version_code > INT32_MAX) {
-    list.error = L"The Android release tracker returned an invalid version code. Try again later.";
+    list.error = T(L"The Android release tracker returned an invalid version code. Try again later.");
     return list;
   }
   release.version_name = VersionNameOf(json->GetString("name"), release.version_code);
@@ -534,7 +535,7 @@ RobloxReleaseList FetchRobloxReleases(const std::atomic<bool>* cancel) {
 #else
   (void)cancel;
   RobloxReleaseList list;
-  list.error = L"Downloading Roblox isn’t available in this version of Elixir.";
+  list.error = T(L"Downloading Roblox isn’t available in this version of Elixir.");
   return list;
 #endif
 }
@@ -626,23 +627,23 @@ bool LoadSigningPins(const std::wstring& path, SigningPins* pins, std::wstring* 
     if (error != nullptr) *error = std::move(message);
     return false;
   };
-  constexpr wchar_t kDamaged[] = L"Part of Elixir is damaged. Reinstall Elixir.";
-  if (path.empty()) return fail(L"Part of Elixir is missing. Reinstall Elixir.");
+  constexpr wchar_t kDamaged[] = ELIXIR_TR(L"Part of Elixir is damaged. Reinstall Elixir.");
+  if (path.empty()) return fail(T(L"Part of Elixir is missing. Reinstall Elixir."));
   std::string bytes;
-  if (!ReadFileBytes(path, &bytes, nullptr, 1u << 20)) return fail(kDamaged);
+  if (!ReadFileBytes(path, &bytes, nullptr, 1u << 20)) return fail(T(kDamaged));
   std::string parse_error;
   const auto json = Json::Parse(bytes, &parse_error);
-  if (!json || !json->is_object()) return fail(kDamaged);
+  if (!json || !json->is_object()) return fail(T(kDamaged));
   SigningPins parsed;
   parsed.path = path;
   parsed.package = json->GetString("package");
   if (const Json* trusted = json->Find("trusted_sha256"); trusted != nullptr && trusted->is_array()) {
     for (const Json& value : trusted->items()) {
-      if (!value.is_string() || !IsSha256Hex(value.string_ref())) return fail(kDamaged);
+      if (!value.is_string() || !IsSha256Hex(value.string_ref())) return fail(T(kDamaged));
       parsed.sha256.push_back(NormalizeSha256(value.string_ref()));
     }
   }
-  if (parsed.package.empty() || parsed.sha256.empty()) return fail(kDamaged);
+  if (parsed.package.empty() || parsed.sha256.empty()) return fail(T(kDamaged));
   *pins = std::move(parsed);
   return true;
 }
@@ -653,7 +654,7 @@ std::wstring RobloxDownloadDirectory(const std::wstring& downloads_dir, const Ro
 
 bool AcceptDownloadedFile(const std::wstring& path, const RobloxPackageFile& published, std::string* measured,
                           std::wstring* error) {
-  const auto reject = [&](const wchar_t* message) {
+  const auto reject = [&](const std::wstring& message) {
     DeleteFileW(path.c_str());
     if (error != nullptr) *error = message;
     return false;
@@ -661,17 +662,17 @@ bool AcceptDownloadedFile(const std::wstring& path, const RobloxPackageFile& pub
   WIN32_FILE_ATTRIBUTE_DATA data{};
   if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &data) ||
       (data.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT))) {
-    if (error != nullptr) *error = L"The downloaded file is missing. Try again.";
+    if (error != nullptr) *error = T(L"The downloaded file is missing. Try again.");
     return false;
   }
   const std::uint64_t size = (static_cast<std::uint64_t>(data.nFileSizeHigh) << 32) | data.nFileSizeLow;
   std::string digest;
   std::wstring hash_error;
-  if (!Sha256File(path, &digest, &hash_error)) return reject(L"The download couldn’t be checked. Try again.");
+  if (!Sha256File(path, &digest, &hash_error)) return reject(T(L"The download couldn’t be checked. Try again."));
   if (measured != nullptr) *measured = digest;
-  if (published.sha256.empty()) return reject(L"The download couldn’t be checked. Try again.");
+  if (published.sha256.empty()) return reject(T(L"The download couldn’t be checked. Try again."));
   if ((published.size != 0 && size != published.size) || !Sha256Equal(digest, published.sha256)) {
-    return reject(L"The download was damaged. Try again.");
+    return reject(T(L"The download was damaged. Try again."));
   }
   return true;
 }
@@ -730,7 +731,7 @@ RobloxDownloadResult DownloadRobloxRelease(const RobloxRelease& release, const s
   result.directory = RobloxDownloadDirectory(downloads_dir, release);
 #if defined(ELIXIR_WITH_ROBLOX_DOWNLOAD)
   if (release.files.empty()) {
-    result.error = L"This version can’t be downloaded.";
+    result.error = T(L"This version can’t be downloaded.");
     return result;
   }
   const std::string tag = std::to_string(release.version_code);
@@ -738,7 +739,7 @@ RobloxDownloadResult DownloadRobloxRelease(const RobloxRelease& release, const s
     if (!SafeFileName(file.name) || !IsSha256Hex(file.sha256) || file.size == 0 || file.size > kMaximumApkBytes ||
         file.url != kGitHubAssetPrefix + tag + "/" + file.name) {
       AppendLog(&result.log, "refused " + file.name + " (" + file.url + ")");
-      result.error = L"This version can’t be downloaded.";
+      result.error = T(L"This version can’t be downloaded.");
       return result;
     }
   }
@@ -790,7 +791,7 @@ RobloxDownloadResult DownloadRobloxRelease(const RobloxRelease& release, const s
         reason += " (Elixir downloads only from " + AssetHostList() + "; GitHub may have moved its release downloads)";
       }
       result.error = downloaded_file.cancelled ? L"Cancelled."
-                                               : L"The download failed. Check your internet connection and try again.";
+                                               : T(L"The download failed. Check your internet connection and try again.");
       AppendLog(&result.log, "  failed: " + reason);
       return result;
     }
@@ -804,7 +805,7 @@ RobloxDownloadResult DownloadRobloxRelease(const RobloxRelease& release, const s
       DeleteFileW(destination.c_str());
       const std::string host = served_by.empty() ? std::string("an unknown host") : served_by;
       AppendLog(&result.log, "  rejected: served by " + host + ", not one of " + AssetHostList());
-      result.error = L"The download didn’t come from the expected place. Try again later.";
+      result.error = T(L"The download didn’t come from the expected place. Try again later.");
       return result;
     }
     report({"Checking the download", index + 1, count, file.size, file.size});
@@ -814,7 +815,7 @@ RobloxDownloadResult DownloadRobloxRelease(const RobloxRelease& release, const s
         !AcceptDownloadedFile(destination, file, &on_disk, &mismatch)) {
       if (mismatch.empty()) {
         DeleteFileW(destination.c_str());
-        mismatch = L"The download was damaged. Try again.";
+        mismatch = T(L"The download was damaged. Try again.");
       }
       AppendLog(&result.log, "  rejected: sha256 " + (on_disk.empty() ? downloaded_file.sha256 : on_disk) +
                                  ", published " + file.sha256);
@@ -833,7 +834,7 @@ RobloxDownloadResult DownloadRobloxRelease(const RobloxRelease& release, const s
   (void)release;
   (void)progress;
   (void)cancel;
-  result.error = L"Downloading Roblox isn’t available in this version of Elixir.";
+  result.error = T(L"Downloading Roblox isn’t available in this version of Elixir.");
   return result;
 #endif
 }
@@ -843,7 +844,7 @@ ApkResult VerifyRobloxPackage(const ApkComponent& component, const std::vector<s
                               const ApkProgressCallback& progress, const std::atomic<bool>* cancel) {
   ApkResult result;
   if (pins.sha256.empty() || pins.path.empty()) {
-    result.error = L"Part of Elixir is missing. Reinstall Elixir.";
+    result.error = T(L"Part of Elixir is missing. Reinstall Elixir.");
     return result;
   }
   ApkComponent pinned = component;
@@ -858,7 +859,7 @@ ApkResult VerifyRobloxPackage(const ApkComponent& component, const std::vector<s
     return std::any_of(pins.sha256.begin(), pins.sha256.end(),
                        [&](const std::string& pin) { return Sha256Equal(pin, digest); });
   };
-  const auto reject = [&](std::string detail, const wchar_t* message) {
+  const auto reject = [&](std::string detail, const std::wstring& message) {
     result.log += "rejected: " + detail + "\n";
     result.ok = false;
     result.metadata.signature_verified = false;
@@ -866,22 +867,22 @@ ApkResult VerifyRobloxPackage(const ApkComponent& component, const std::vector<s
     result.error = message;
     return result;
   };
-  constexpr wchar_t kNotOfficial[] = L"This isn’t an official Roblox file.";
+  constexpr wchar_t kNotOfficial[] = ELIXIR_TR(L"This isn’t an official Roblox file.");
   if (result.metadata.package != pins.package) {
-    return reject("package " + result.metadata.package + ", not " + pins.package, L"This file isn’t Roblox.");
+    return reject("package " + result.metadata.package + ", not " + pins.package, T(L"This file isn’t Roblox."));
   }
   if (!pinned_digest(result.metadata.signer_sha256)) {
     return reject("signer " + result.metadata.signer_sha256 + " is not pinned in " + WideToUtf8(pins.path),
-                  kNotOfficial);
+                  T(kNotOfficial));
   }
   for (const ApkFileReport& report : result.reports) {
     if (report.certificates.empty() || !pinned_digest(report.certificates.front())) {
       const std::string signer = report.certificates.empty() ? std::string("none") : report.certificates.front();
-      return reject(WideToUtf8(FileNameOf(report.path)) + ": signer " + signer + " is not pinned", kNotOfficial);
+      return reject(WideToUtf8(FileNameOf(report.path)) + ": signer " + signer + " is not pinned", T(kNotOfficial));
     }
   }
   if (!result.metadata.has_x86_64_engine) {
-    return reject("missing x86-64 Roblox engine", L"This package doesn’t contain the x86-64 Roblox engine.");
+    return reject("missing x86-64 Roblox engine", T(L"This package doesn’t contain the x86-64 Roblox engine."));
   }
   result.metadata.signer_status = "Official Roblox file";
   return result;

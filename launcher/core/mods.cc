@@ -10,6 +10,7 @@
 
 #include "core/json.h"
 #include "core/util.h"
+#include "core/i18n.h"
 #include "runtime/mod_paths.h"
 
 namespace elixir::launcher {
@@ -126,29 +127,29 @@ CustomFontResult ApplyCustomFont(const std::wstring& mods_directory, const std::
   WIN32_FILE_ATTRIBUTE_DATA attributes{};
   if (!GetFileAttributesExW(font_file.c_str(), GetFileExInfoStandard, &attributes) ||
       (attributes.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
-    result.error = L"That file can’t be read.";
+    result.error = T(L"That file can’t be read.");
     return result;
   }
   const std::uint64_t size = (static_cast<std::uint64_t>(attributes.nFileSizeHigh) << 32) | attributes.nFileSizeLow;
   if (size == 0 || size > kMaxFontBytes || !LooksLikeFontFile(font_file)) {
-    result.error = L"That file isn’t a TrueType or OpenType font.";
+    result.error = T(L"That file isn’t a TrueType or OpenType font.");
     return result;
   }
   const std::wstring client_families = FamiliesDirectory(client_assets_directory);
   const std::vector<std::wstring> families = JsonFilesIn(client_families);
   if (families.empty()) {
-    result.error = L"Install Roblox first: its font list wasn’t found.";
+    result.error = T(L"Install Roblox first: its font list wasn’t found.");
     return result;
   }
   std::wstring error;
   const std::wstring fonts = FontsDirectory(mods_directory);
   const std::wstring mod_families = FamiliesDirectory(mods_directory);
   if (!EnsureDirectory(mod_families, &error)) {
-    result.error = L"The Mods folder can’t be written. " + error;
+    result.error = TF(L"The Mods folder can’t be written. {0}", error);
     return result;
   }
   if (!CopyFileW(font_file.c_str(), JoinPath(fonts, kCustomFontFile).c_str(), FALSE)) {
-    result.error = WithErrorCause(L"The font couldn’t be copied into the Mods folder", GetLastError());
+    result.error = WithErrorCause(T(L"The font couldn’t be copied into the Mods folder"), GetLastError());
     return result;
   }
   for (const std::wstring& name : families) {
@@ -160,14 +161,14 @@ CustomFontResult ApplyCustomFont(const std::wstring& mods_directory, const std::
     const std::optional<Json> replaced = WithFont(*family);
     if (!replaced) continue;
     if (!AtomicWriteFile(JoinPath(mod_families, name), replaced->Dump(2) + "\n", AtomicWriteBackup::kNone, &error)) {
-      result.error = L"The Mods folder can’t be written. " + error;
+      result.error = TF(L"The Mods folder can’t be written. {0}", error);
       return result;
     }
     ++result.families;
   }
   if (result.families == 0) {
     DeleteFileW(JoinPath(fonts, kCustomFontFile).c_str());
-    result.error = L"Roblox’s font list couldn’t be read.";
+    result.error = T(L"Roblox’s font list couldn’t be read.");
     return result;
   }
   result.ok = true;
@@ -184,13 +185,13 @@ bool RemoveCustomFont(const std::wstring& mods_directory, std::wstring* error) {
     if (!ReadFileBytes(path, &text, &read_error, 1u << 20)) continue;
     if (text.find(kCustomFontAsset) == std::string::npos) continue;
     if (!DeleteFileW(path.c_str()) && GetLastError() != ERROR_FILE_NOT_FOUND) {
-      if (ok && error != nullptr) *error = WithErrorCause(L"A font file couldn’t be removed", GetLastError());
+      if (ok && error != nullptr) *error = WithErrorCause(T(L"A font file couldn’t be removed"), GetLastError());
       ok = false;
     }
   }
   const std::wstring font = JoinPath(FontsDirectory(mods_directory), kCustomFontFile);
   if (!DeleteFileW(font.c_str()) && GetLastError() != ERROR_FILE_NOT_FOUND && GetLastError() != ERROR_PATH_NOT_FOUND) {
-    if (ok && error != nullptr) *error = WithErrorCause(L"The font couldn’t be removed", GetLastError());
+    if (ok && error != nullptr) *error = WithErrorCause(T(L"The font couldn’t be removed"), GetLastError());
     ok = false;
   }
   RemoveDirectoryW(mod_families.c_str());

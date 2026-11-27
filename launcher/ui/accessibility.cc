@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <string>
+#include "core/i18n.h"
 
 namespace elixir::launcher::ui {
 
@@ -40,14 +41,14 @@ long RoleOf(ControlKind kind) {
 
 const wchar_t* DefaultActionOf(ControlKind kind) {
   switch (kind) {
-    case ControlKind::kButton: return L"Press";
-    case ControlKind::kNav: return L"Switch";
-    case ControlKind::kToggle: return L"Toggle";
+    case ControlKind::kButton: return T(L"Press").c_str();
+    case ControlKind::kNav: return T(L"Switch").c_str();
+    case ControlKind::kToggle: return T(L"Toggle##action").c_str();
     case ControlKind::kSegment:
     case ControlKind::kRadio:
-    case ControlKind::kListItem: return L"Select";
-    case ControlKind::kTextField: return L"Edit";
-    case ControlKind::kLink: return L"Jump";
+    case ControlKind::kListItem: return T(L"Select").c_str();
+    case ControlKind::kTextField: return T(L"Edit").c_str();
+    case ControlKind::kLink: return T(L"Jump").c_str();
     default: return L"";
   }
 }
@@ -143,7 +144,7 @@ HRESULT AccessibleRoot::get_accValue(VARIANT child, BSTR* value) {
 HRESULT AccessibleRoot::get_accDescription(VARIANT child, BSTR* description) {
   const long id = Resolve(child);
   if (id < 0) return host_ == nullptr ? kDisconnected : E_INVALIDARG;
-  if (id == 0) return ReturnString(L"Elixir launcher", description);
+  if (id == 0) return ReturnString(T(L"Elixir launcher"), description);
   return ReturnString(Control(id)->description, description);
 }
 
@@ -239,7 +240,7 @@ HRESULT AccessibleRoot::get_accDefaultAction(VARIANT child, BSTR* action) {
   const long id = Resolve(child);
   if (id < 0) return host_ == nullptr ? kDisconnected : E_INVALIDARG;
   if (id == 0) return ReturnString(L"", action);
-  if (Control(id)->kind == ControlKind::kComboBox) return ReturnString(Control(id)->expanded ? L"Close" : L"Open", action);
+  if (Control(id)->kind == ControlKind::kComboBox) return ReturnString(Control(id)->expanded ? T(L"Close") : T(L"Open"), action);
   return ReturnString(DefaultActionOf(Control(id)->kind), action);
 }
 

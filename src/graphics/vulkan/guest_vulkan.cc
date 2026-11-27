@@ -202,7 +202,7 @@ CallbackObject TakeCallbackObject(std::unordered_map<std::uint64_t, CallbackObje
 
 struct WindowRecord {
   HWND hwnd = nullptr;
-  float render_scale = 1.0f;
+  RenderScale render_scale;
 };
 
 std::mutex& WindowMutex() {
@@ -228,12 +228,12 @@ void ForgetSurfaceWindow(VkSurfaceKHR surface) {
   SurfaceWindows().erase(reinterpret_cast<std::uint64_t>(surface));
 }
 
-float SurfaceRenderScale(VkSurfaceKHR surface) {
+RenderScale SurfaceRenderScale(VkSurfaceKHR surface) {
   std::lock_guard<std::mutex> lock(WindowMutex());
   const auto owner = SurfaceWindows().find(reinterpret_cast<std::uint64_t>(surface));
-  if (owner == SurfaceWindows().end()) return 1.0f;
+  if (owner == SurfaceWindows().end()) return {};
   const auto window = Windows().find(owner->second);
-  return window != Windows().end() ? window->second.render_scale : 1.0f;
+  return window != Windows().end() ? window->second.render_scale : RenderScale{};
 }
 
 void ScaleSurfaceCapabilitiesForGuest(VkSurfaceKHR surface, VkSurfaceCapabilitiesKHR* capabilities) {
@@ -647,16 +647,16 @@ HWND FindNativeWindow(const void* anative_window) {
   return it != Windows().end() ? it->second.hwnd : nullptr;
 }
 
-void SetNativeWindowRenderScale(const void* anative_window, float scale) {
+void SetNativeWindowRenderScale(const void* anative_window, const RenderScale& scale) {
   std::lock_guard<std::mutex> lock(WindowMutex());
   const auto it = Windows().find(anative_window);
-  if (it != Windows().end()) it->second.render_scale = RendersSmaller(scale) ? scale : 1.0f;
+  if (it != Windows().end()) it->second.render_scale = Normalized(scale);
 }
 
-float NativeWindowRenderScale(const void* anative_window) {
+RenderScale NativeWindowRenderScale(const void* anative_window) {
   std::lock_guard<std::mutex> lock(WindowMutex());
   const auto it = Windows().find(anative_window);
-  return it != Windows().end() ? it->second.render_scale : 1.0f;
+  return it != Windows().end() ? it->second.render_scale : RenderScale{};
 }
 
 bool InitializeHostVulkan(std::string* error) {

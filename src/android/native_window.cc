@@ -58,7 +58,7 @@ struct ANativeWindow {
   int user_width = 0;
   int user_height = 0;
   std::int32_t user_format = 0;
-  float render_scale = 1.0f;
+  elixir::RenderScale render_scale;
   bool abandoned = false;
   bool locked = false;
   bool surface_window = false;
@@ -75,10 +75,10 @@ struct ANativeWindow {
   std::uint64_t presented_frames = 0;
 
   int Width() const {
-    return user_width != 0 ? user_width : static_cast<int>(elixir::ScaledExtent(default_width, render_scale));
+    return user_width != 0 ? user_width : static_cast<int>(elixir::ScaledWidth(default_width, render_scale));
   }
   int Height() const {
-    return user_height != 0 ? user_height : static_cast<int>(elixir::ScaledExtent(default_height, render_scale));
+    return user_height != 0 ? user_height : static_cast<int>(elixir::ScaledHeight(default_height, render_scale));
   }
   std::int32_t Format() const { return user_format != 0 ? user_format : kFormatRgba8888; }
 };
@@ -95,7 +95,7 @@ struct Registry {
   std::mutex mutex;
   std::unordered_map<ANativeWindow*, std::uint64_t> live;
   std::unordered_map<const void*, SurfaceAssociation> surfaces;
-  std::unordered_map<const void*, float> surface_scales;
+  std::unordered_map<const void*, RenderScale> surface_scales;
   std::uint64_t next_order = 1;
 };
 
@@ -213,7 +213,7 @@ ANativeWindow* CreateSurfaceWindow(ANativeWindow* parent, const void* surface) n
     delete window;
     return existing;
   }
-  if (elixir::RendersSmaller(window->render_scale)) {
+  if (window->render_scale.smaller()) {
     Log(kLogInfo, "ANativeWindow %p for Java Surface %p (HWND %p, %dx%d, rendered at %dx%d)",
         static_cast<void*>(window), surface, static_cast<void*>(window->hwnd), window->default_width,
         window->default_height, window->Width(), window->Height());
@@ -224,7 +224,7 @@ ANativeWindow* CreateSurfaceWindow(ANativeWindow* parent, const void* surface) n
   return window;
 }
 
-void ApplyRenderScale(ANativeWindow* window, float scale) noexcept {
+void ApplyRenderScale(ANativeWindow* window, const RenderScale& scale) noexcept {
   {
     std::lock_guard<std::mutex> lock(window->mutex);
     if (window->render_scale != scale) window->geometry_changed = true;
@@ -461,14 +461,14 @@ void AssociateSurface(const void* java_surface, ANativeWindow* window) {
   if (dropped != nullptr) Release(dropped);
 }
 
-void SetSurfaceRenderScale(const void* java_surface, float scale) {
+void SetSurfaceRenderScale(const void* java_surface, const RenderScale& wanted) {
   if (java_surface == nullptr) return;
-  if (!elixir::RendersSmaller(scale)) scale = 1.0f;
+  const RenderScale scale = Normalized(wanted);
   ANativeWindow* window = nullptr;
   {
     Registry& registry = GetRegistry();
     std::lock_guard<std::mutex> lock(registry.mutex);
-    if (scale == 1.0f) {
+    if (!scale.smaller()) {
       registry.surface_scales.erase(java_surface);
     } else {
       try {
@@ -487,9 +487,9 @@ void SetSurfaceRenderScale(const void* java_surface, float scale) {
   Release(window);
 }
 
-void SetNativeWindowRenderScale(ANativeWindow* window, float scale) {
+void SetNativeWindowRenderScale(ANativeWindow* window, const RenderScale& scale) {
   if (window == nullptr) return;
-  ApplyRenderScale(window, elixir::RendersSmaller(scale) ? scale : 1.0f);
+  ApplyRenderScale(window, Normalized(scale));
 }
 
 void ResetSurfaceRenderScales() {
@@ -506,7 +506,7 @@ void ResetSurfaceRenderScales() {
     }
   }
   for (ANativeWindow* window : scaled) {
-    ApplyRenderScale(window, 1.0f);
+    ApplyRenderScale(window, RenderScale{});
     Release(window);
   }
 }

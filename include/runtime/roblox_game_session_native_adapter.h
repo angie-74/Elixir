@@ -113,9 +113,9 @@ struct RobloxGameSurfaceJniConfig {
   bool is_mouse_device = true;
   bool is_keyboard_device = true;
   void* scaling_context = nullptr;
-  float (*game_render_scale)(void* context) = nullptr;
+  elixir::RenderScale (*game_render_scale)(void* context) = nullptr;
   void (*bind_surface_scale)(void* context, jobject surface,
-                             float render_scale) = nullptr;
+                             elixir::RenderScale render_scale) = nullptr;
   void (*reset_surface_scales)(void* context) = nullptr;
 
   bool complete() const {
@@ -123,18 +123,17 @@ struct RobloxGameSurfaceJniConfig {
            viewport_width_mm > 0 && viewport_height_mm > 0;
   }
 
-  float GameRenderScale() const {
-    const float scale = game_render_scale != nullptr
-                            ? game_render_scale(scaling_context)
-                            : 1.0f;
-    return elixir::RendersSmaller(scale) ? scale : 1.0f;
+  elixir::RenderScale GameRenderScale() const {
+    return game_render_scale != nullptr
+               ? elixir::Normalized(game_render_scale(scaling_context))
+               : elixir::RenderScale{};
   }
 
-  void BindSurfaceScale(jobject surface, float render_scale) const {
+  void BindSurfaceScale(jobject surface,
+                        const elixir::RenderScale& render_scale) const {
     if (bind_surface_scale != nullptr && surface != nullptr) {
       bind_surface_scale(scaling_context, surface,
-                         elixir::RendersSmaller(render_scale) ? render_scale
-                                                              : 1.0f);
+                         elixir::Normalized(render_scale));
     }
   }
 
@@ -145,20 +144,28 @@ struct RobloxGameSurfaceJniConfig {
   }
 };
 
-inline GameSurface ScaledGameSurface(GameSurface surface, float scale,
+inline elixir::RenderScale RenderScaleOf(const GameSurface& surface) {
+  return elixir::Normalized({surface.render_scale, surface.width_scale});
+}
+
+inline GameSurface ScaledGameSurface(GameSurface surface,
+                                     const elixir::RenderScale& wanted,
                                      float fallback_dpi_scale) {
-  if (!elixir::RendersSmaller(scale)) {
-    surface.render_scale = 1.0f;
+  const elixir::RenderScale scale = elixir::Normalized(wanted);
+  surface.render_scale = scale.size;
+  surface.width_scale = scale.width;
+  if (!scale.smaller()) {
     return surface;
   }
   surface.width =
-      static_cast<uint32_t>(elixir::ScaledExtent(surface.width, scale));
+      static_cast<uint32_t>(elixir::ScaledWidth(surface.width, scale));
   surface.height =
-      static_cast<uint32_t>(elixir::ScaledExtent(surface.height, scale));
-  surface.dpi_scale =
-      (surface.dpi_scale > 0.0f ? surface.dpi_scale : fallback_dpi_scale) *
-      scale;
-  surface.render_scale = scale;
+      static_cast<uint32_t>(elixir::ScaledHeight(surface.height, scale));
+  if (elixir::RendersSmaller(scale.size)) {
+    surface.dpi_scale =
+        (surface.dpi_scale > 0.0f ? surface.dpi_scale : fallback_dpi_scale) *
+        scale.size;
+  }
   return surface;
 }
 

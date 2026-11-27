@@ -24,7 +24,9 @@
 #include "core/json.h"
 #include "core/process.h"
 #include "core/sha256.h"
+#include "core/shared_settings.h"
 #include "core/util.h"
+#include "core/i18n.h"
 #include "resource.h"
 #include "ui/theme.h"
 
@@ -73,10 +75,8 @@ double NowMs() {
 }
 constexpr UINT_PTR kToastTimer = 2;
 constexpr int kEditorId = 100;
-constexpr wchar_t kSettingsNotSaved[] = L"Make sure your drive has free space, then try again.";
-
 std::wstring SettingsSaveError(const std::wstring& cause) {
-  return cause.empty() ? std::wstring(kSettingsNotSaved) : cause + L" Try again.";
+  return cause.empty() ? T(L"Make sure your drive has free space, then try again.") : TF(L"{0} Try again.", cause);
 }
 
 struct Task {
@@ -110,20 +110,20 @@ HICON LoadAppIcon(int size) {
 
 }
 
-const wchar_t* PageTitle(Page page) {
+const std::wstring& PageTitle(Page page) {
   switch (page) {
-    case Page::kInstall: return L"Installation";
-    case Page::kFastFlags: return L"Fast Flags";
-    case Page::kGlobalSettings: return L"Global Settings";
-    case Page::kIntegrations: return L"Integrations";
-    case Page::kSettings: return L"Settings";
-    case Page::kCrashLogs: return L"Crash logs";
-    case Page::kUpdates: return L"Updates";
-    case Page::kAbout: return L"About";
-    case Page::kMods: return L"Mods";
-    case Page::kShortcuts: return L"Shortcuts";
+    case Page::kInstall: return T(L"Installation");
+    case Page::kFastFlags: return T(L"Fast Flags");
+    case Page::kGlobalSettings: return T(L"Global Settings");
+    case Page::kIntegrations: return T(L"Integrations");
+    case Page::kSettings: return T(L"Settings");
+    case Page::kCrashLogs: return T(L"Crash logs");
+    case Page::kUpdates: return T(L"Updates");
+    case Page::kAbout: return T(L"About");
+    case Page::kMods: return T(L"Mods");
+    case Page::kShortcuts: return T(L"Shortcuts");
   }
-  return L"";
+  return T(L"");
 }
 
 const char* PageKey(Page page) {
@@ -186,7 +186,10 @@ App::App(AppOptions options)
   RefreshControlAccent();
   RefreshMotionSetting();
   apk_ = LocateApkComponent(paths_.exe_dir);
-  if (!options_.test_mode) PageFromKey(config_.last_page, &page_);
+  if (!options_.test_mode) {
+    PageFromKey(config_.last_page, &page_);
+    SetLanguage(ResolveLanguage(config_.language));
+  }
   CleanupApkWorkDirectory(JoinPath(paths_.data_root, L"tmp"));
 }
 
@@ -296,6 +299,7 @@ void App::StartLauncherServices() {
   services_started_ = true;
   RefreshAudioDevices();
   RefreshCrashLogs();
+  PrefetchAccountPictures();
   if (page_ == Page::kFastFlags) LoadFastFlags(true);
   if (page_ == Page::kGlobalSettings) RefreshGlobalSettings();
   if (page_ == Page::kSettings) MeasureCaches();
@@ -497,8 +501,13 @@ LRESULT App::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) {
       return 0;
     case WM_MOUSEWHEEL: {
       if (overlay_.open) return 0;
-      if (menu_focus_ >= 0) CloseMenu();
       const float notches = static_cast<float>(GET_WHEEL_DELTA_WPARAM(wparam)) / WHEEL_DELTA;
+      if (menu_focus_ >= 0 && menu_max_scroll_ > 0.0f) {
+        menu_scroll_ = std::clamp(menu_scroll_ - notches * 64.0f, 0.0f, menu_max_scroll_);
+        Invalidate();
+        return 0;
+      }
+      if (menu_focus_ >= 0) CloseMenu();
       POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
       ScreenToClient(hwnd_, &point);
       const ControlRecord* hit =
@@ -610,10 +619,10 @@ LRESULT App::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) {
       if (!got || overlay_.open) return 0;
       const std::wstring extension = ExtensionOf(file);
       if (extension != L".apk" && extension != L".apkm" && extension != L".xapk") {
-        ShowToast(L"That file isn’t Roblox.");
+        ShowToast(T(L"That file isn’t Roblox."));
       } else if (!apk_.configured || !apk_.found) {
         Navigate(Page::kInstall);
-        ShowToast(L"Part of Elixir is missing. Reinstall Elixir, then try again.");
+        ShowToast(T(L"Part of Elixir is missing. Reinstall Elixir, then try again."));
       } else {
         ValidatePackage(file);
       }
@@ -838,9 +847,14 @@ bool App::RenderOffscreen(UINT dpi, float width, float height, const std::wstrin
   out = OffscreenFrame{};
   out.width = width;
   out.height = height;
+  const bool timed = test_motion_clock_ >= 0.0;
   for (int pass = 0; pass < 2; ++pass) {
     out.controls.clear();
     out.layout = UiLayoutLog{};
+    if (timed) {
+      animator_.BeginFrame(test_motion_clock_, true);
+      state_.animator = &animator_;
+    }
     target->BeginDraw();
     target->SetTransform(D2D1::Matrix3x2F::Identity());
     target->Clear(theme::kWindow);
@@ -849,6 +863,10 @@ bool App::RenderOffscreen(UINT dpi, float width, float height, const std::wstrin
     BuildFrame(ui);
     ui.Flush();
     hr = target->EndDraw();
+    if (timed) {
+      animator_.EndFrame();
+      state_.animator = nullptr;
+    }
   }
   out.viewport = viewport_;
   renderer_.EndOffscreen();
@@ -1100,9 +1118,11 @@ void App::SetMenu(const std::wstring& control, int option, int count) {
   if (menu_focus_ >= 0 && menu_control_ != control) CloseMenu();
   const bool opening = menu_focus_ < 0;
   if (opening) SetFocusTo(control, state_.focus_visible);
+  if (opening) menu_scroll_ = 0.0f;
   menu_control_ = control;
   menu_count_ = count;
   menu_focus_ = std::min(option, count - 1);
+  menu_reveal_ = true;
   if (opening) {
     PaintNow();
     NotifyWinEvent(EVENT_OBJECT_REORDER, hwnd_, OBJID_CLIENT, CHILDID_SELF);
@@ -1116,6 +1136,9 @@ void App::CloseMenu() {
   menu_focus_ = -1;
   menu_count_ = 0;
   menu_control_.clear();
+  menu_scroll_ = 0.0f;
+  menu_max_scroll_ = 0.0f;
+  menu_height_ = 0.0f;
   PaintNow();
   NotifyWinEvent(EVENT_OBJECT_REORDER, hwnd_, OBJID_CLIENT, CHILDID_SELF);
   SetFocusTo(control, state_.focus_visible, false);
@@ -1133,22 +1156,74 @@ int App::MenuPanel(Ui& ui, const std::wstring& control, const D2D1_RECT_F& butto
                    const std::vector<std::wstring>& options, int selected) {
   constexpr float row_height = 32.0f;
   constexpr float padding = 4.0f;
-  const float menu_height = row_height * static_cast<float>(options.size()) + 2.0f * padding;
+  const float needed = row_height * static_cast<float>(options.size()) + 2.0f * padding;
   const float below = button.bottom + padding;
-  const float top = below + menu_height <= viewport_.bottom
-                        ? below
-                        : std::max(viewport_.top + padding, std::min(button.top - padding, viewport_.bottom) - menu_height);
+  const float room_below = viewport_.bottom - padding - below;
+  const float room_above = std::min(button.top - padding, viewport_.bottom) - (viewport_.top + padding);
+  float menu_height = needed;
+  float top = below;
+  if (needed > room_below) {
+    if (needed <= room_above || room_above > room_below) {
+      menu_height = std::min(needed, std::max(room_above, 3.0f * row_height + 2.0f * padding));
+      top = std::max(viewport_.top + padding, std::min(button.top - padding, viewport_.bottom) - menu_height);
+    } else {
+      menu_height = std::min(needed, std::max(room_below, 3.0f * row_height + 2.0f * padding));
+    }
+  }
+  const float max_scroll = std::max(0.0f, needed - menu_height);
+  if (ui.painting()) {
+    menu_max_scroll_ = max_scroll;
+    menu_scroll_ = std::clamp(menu_scroll_, 0.0f, max_scroll);
+    if (menu_control_ == control && std::abs(menu_height - menu_height_) > 0.5f) {
+      menu_height_ = menu_height;
+      menu_reveal_ = true;
+    }
+    if (menu_reveal_ && menu_control_ == control) {
+      menu_reveal_ = false;
+      const float row_top = static_cast<float>(std::max(menu_focus_, 0)) * row_height;
+      const float inner = menu_height - 2.0f * padding;
+      if (row_top < menu_scroll_) menu_scroll_ = row_top;
+      if (row_top + row_height > menu_scroll_ + inner) menu_scroll_ = row_top + row_height - inner;
+      menu_scroll_ = std::clamp(menu_scroll_, 0.0f, max_scroll);
+    }
+  }
+  const float scroll = std::clamp(menu_scroll_, 0.0f, max_scroll);
   const D2D1_RECT_F panel = D2D1::RectF(button.left, top, button.right, top + menu_height);
+  const float shown = ui.Animate(L"menu:" + control, 1.0f, theme::kPopupMs, 0.0f);
+  ui.PushLayer(shown, (1.0f - shown) * (top < button.top ? theme::kMenuSlide : -theme::kMenuSlide));
   ui.Fill(panel, theme::kDialog, theme::kControlRadius);
   ui.Stroke(panel, theme::kControlBorder, theme::kControlRadius);
   int chosen = -1;
+  if (max_scroll > 0.0f) ui.PushClip(D2D1::RectF(panel.left, panel.top + padding, panel.right, panel.bottom - padding));
   for (int i = 0; i < static_cast<int>(options.size()); ++i) {
     const std::wstring id = control + L"#" + std::to_wstring(i);
-    const float row_top = top + padding + static_cast<float>(i) * row_height;
+    const float row_top = top + padding + static_cast<float>(i) * row_height - scroll;
     const D2D1_RECT_F row = D2D1::RectF(panel.left + padding, row_top, panel.right - padding, row_top + row_height);
     if (ui.ComboOption(id, row, options[static_cast<std::size_t>(i)], i == selected)) chosen = i;
   }
+  if (max_scroll > 0.0f) {
+    ui.PopClip();
+    const float track = menu_height - 2.0f * padding - 8.0f;
+    const float thumb = std::max(24.0f, track * (menu_height - 2.0f * padding) / (needed - 2.0f * padding));
+    const float offset = (track - thumb) * (scroll / max_scroll);
+    ui.Fill(D2D1::RectF(panel.right - 5.0f, panel.top + padding + 4.0f + offset, panel.right - 2.0f,
+                        panel.top + padding + 4.0f + offset + thumb),
+            theme::White(0.22f), 1.5f);
+  }
+  ui.PopLayer();
   return chosen;
+}
+
+void App::ChooseLanguage(int option) {
+  const std::vector<LocaleInfo>& locales = SupportedLocales();
+  const std::string wanted =
+      option >= 1 && option <= static_cast<int>(locales.size()) ? std::string(locales[option - 1].code)
+                                                                 : std::string(kAutomaticLanguage);
+  if (config_.language == wanted) return;
+  config_.language = wanted;
+  SetLanguage(ResolveLanguage(wanted));
+  SaveConfig();
+  Invalidate();
 }
 
 void App::MoveFocus(bool forward) {
@@ -1214,7 +1289,9 @@ void App::OnKeyDown(WPARAM key) {
       case VK_ESCAPE:
       case VK_F4: CloseMenu(); return;
       case VK_DELETE:
-        if (control == kInstanceAccountControl) RemoveInstanceAccount(menu_focus_);
+        if (control == kInstanceAccountControl || control == kPlayAccountControl) {
+          RemoveInstanceAccount(menu_focus_);
+        }
         return;
       case VK_TAB: CloseMenu(); break;
       default: break;
@@ -1601,7 +1678,7 @@ void App::SelectCrashLog(int index) {
   if (!entry.is_dump) {
     std::wstring error;
     if (!ReadCrashLogText(entry.path, &crash_.text, &error, kCrashViewerMaxBytes)) {
-      crash_.error = L"Couldn’t open this crash log.";
+      crash_.error = T(L"Couldn’t open this crash log.");
     }
   }
   Invalidate();
@@ -1612,10 +1689,10 @@ void App::DeleteSelectedCrashLog() {
   Overlay overlay;
   overlay.id = L"crash.delete";
   overlay.status = 1;
-  overlay.title = L"Delete this crash log?";
-  overlay.body = L"It will be moved to the Recycle Bin.";
-  overlay.actions = {{L"crash.delete.confirm", L"Delete", ButtonStyle::kDanger},
-                     {L"overlay.close", L"Cancel", ButtonStyle::kStandard}};
+  overlay.title = T(L"Delete this crash log?");
+  overlay.body = T(L"It will be moved to the Recycle Bin.");
+  overlay.actions = {{L"crash.delete.confirm", T(L"Delete"), ButtonStyle::kDanger},
+                     {L"overlay.close", T(L"Cancel"), ButtonStyle::kStandard}};
   ShowOverlay(std::move(overlay));
 }
 
@@ -1627,10 +1704,11 @@ void App::ChooseApk() {
   if (options_.test_mode) return;
   ComPtr<IFileOpenDialog> dialog;
   if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) return;
-  const COMDLG_FILTERSPEC filters[] = {{L"Roblox packages (*.apk, *.apkm, *.xapk)", L"*.apk;*.apkm;*.xapk"},
-                                       {L"All files (*.*)", L"*.*"}};
+  const COMDLG_FILTERSPEC filters[] = {
+      {T(L"Roblox packages (*.apk, *.apkm, *.xapk)").c_str(), L"*.apk;*.apkm;*.xapk"},
+      {T(L"All files (*.*)").c_str(), L"*.*"}};
   dialog->SetFileTypes(2, filters);
-  dialog->SetTitle(L"Choose a Roblox file");
+  dialog->SetTitle(T(L"Choose a Roblox file").c_str());
   FILEOPENDIALOGOPTIONS flags = 0;
   dialog->GetOptions(&flags);
   dialog->SetOptions(flags | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST | FOS_PATHMUSTEXIST);
@@ -1646,9 +1724,9 @@ void App::ChooseApk() {
 void App::ValidatePackage(const std::wstring& path) {
   if (install_.stage == InstallFlow::Stage::kValidating || install_.stage == InstallFlow::Stage::kInstalling) return;
   if (cache_.clearing || switching_ || RobloxUpdateRunning()) {
-    ShowToast(cache_.clearing ? L"Elixir is clearing the cache. Try again in a moment."
-              : RobloxUpdateRunning() ? L"Elixir is updating Roblox. Try again when it finishes."
-                                      : L"Wait for the current install to finish, then try again.");
+    ShowToast(cache_.clearing ? T(L"Elixir is clearing the cache. Try again in a moment.")
+              : RobloxUpdateRunning() ? T(L"Elixir is updating Roblox. Try again when it finishes.")
+                                      : T(L"Wait for the current install to finish, then try again."));
     return;
   }
   install_.file = path;
@@ -1770,7 +1848,7 @@ void App::StartRobloxUpdate(bool announce, const RobloxRelease* target) {
   const auto cancel = roblox_update_.cancel;
   const auto runner = options_.roblox_update_runner;
   HWND hwnd = hwnd_;
-  if (announce) ShowToast(L"Updating Roblox…");
+  if (announce) ShowToast(T(L"Updating Roblox…"));
   RunInBackground([this, request, cancel, runner, hwnd]() -> std::function<void()> {
     struct Shown {
       RobloxUpdatePhase phase = RobloxUpdatePhase::kChecking;
@@ -1814,8 +1892,8 @@ void App::FinishRobloxUpdate(const RobloxUpdateOutcome& outcome) {
     case Result::kFailed:
       play_after_roblox_install_ = false;
       roblox_update_.stage = RobloxUpdateFlow::Stage::kFailed;
-      roblox_update_.error = outcome.error.empty() ? std::wstring(L"Couldn’t update Roblox.") : outcome.error;
-      if (!roblox_update_.chosen) ShowToast(L"Roblox wasn’t updated. Open Installation to see why.");
+      roblox_update_.error = outcome.error.empty() ? std::wstring(T(L"Couldn’t update Roblox.")) : outcome.error;
+      if (!roblox_update_.chosen) ShowToast(T(L"Roblox wasn’t updated. Open Installation to see why."));
       break;
     case Result::kInstalled: {
       const ApkMetadata& m = outcome.metadata;
@@ -1840,7 +1918,7 @@ void App::FinishRobloxUpdate(const RobloxUpdateOutcome& outcome) {
           play_from_menu_ = true;
           Play();
         } else if (!chosen) {
-          ShowToast(L"Roblox was updated to " + name + L".");
+          ShowToast(TF(L"Roblox was updated to {0}.", name));
         }
       });
       CleanupApkWorkDirectory(JoinPath(paths_.data_root, L"tmp"));
@@ -1856,9 +1934,9 @@ void App::Play() {
     Overlay overlay;
     overlay.id = L"play.unavailable";
     overlay.status = 2;
-    overlay.title = L"Elixir is incomplete";
-    overlay.body = L"Part of Elixir is missing. Reinstall Elixir, then try again.";
-    overlay.actions = {{L"overlay.close", L"Close", ButtonStyle::kStandard}};
+    overlay.title = T(L"Elixir is incomplete");
+    overlay.body = T(L"Part of Elixir is missing. Reinstall Elixir, then try again.");
+    overlay.actions = {{L"overlay.close", T(L"Close"), ButtonStyle::kStandard}};
     ShowOverlay(std::move(overlay));
     return;
   }
@@ -1866,16 +1944,16 @@ void App::Play() {
     Overlay overlay;
     overlay.id = L"play.noapp";
     overlay.status = 1;
-    overlay.title = L"Install Roblox first";
-    overlay.body = L"Roblox isn’t installed yet.";
-    overlay.actions = {{L"overlay.install", L"Install Roblox", ButtonStyle::kStandard},
-                       {L"overlay.close", L"Close", ButtonStyle::kStandard}};
+    overlay.title = T(L"Install Roblox first");
+    overlay.body = T(L"Roblox isn’t installed yet.");
+    overlay.actions = {{L"overlay.install", T(L"Install Roblox"), ButtonStyle::kStandard},
+                       {L"overlay.close", T(L"Close"), ButtonStyle::kStandard}};
     ShowOverlay(std::move(overlay));
     return;
   }
   if (options_.test_mode) return;
   if (switching_) {
-    ShowToast(L"Roblox is being updated. Press Play again in a moment.");
+    ShowToast(T(L"Roblox is being updated. Press Play again in a moment."));
     return;
   }
   LaunchRuntimeNow();
@@ -1889,7 +1967,7 @@ void App::LaunchRuntimeNow() {
   const std::wstring install_dir = Utf8ToWide(config_.installed.install_dir);
   if (!install_dir.empty() && !PathIsDirectory(JoinPath(install_dir, L"assets"))) {
     preparing_assets_ = true;
-    ShowLaunchProgress(L"Configuring Roblox…", false);
+    ShowLaunchProgress(T(L"Configuring Roblox…"), false);
     const ApkComponent component = apk_;
     RunInBackground([this, component, install_dir]() -> std::function<void()> {
       const ApkResult result = EnsureInstalledAssets(component, install_dir);
@@ -1903,9 +1981,9 @@ void App::LaunchRuntimeNow() {
         Overlay overlay;
         overlay.id = L"play.assets";
         overlay.status = 2;
-        overlay.title = L"Roblox couldn’t be prepared";
-        overlay.body = L"Reinstall Roblox on the Installation page, then try again.";
-        overlay.actions = {{L"overlay.close", L"Close", ButtonStyle::kStandard}};
+        overlay.title = T(L"Roblox couldn’t be prepared");
+        overlay.body = T(L"Reinstall Roblox on the Installation page, then try again.");
+        overlay.actions = {{L"overlay.close", T(L"Close"), ButtonStyle::kStandard}};
         ShowOverlay(std::move(overlay));
       };
     });
@@ -1913,15 +1991,16 @@ void App::LaunchRuntimeNow() {
     return;
   }
   if (config_dirty_) SaveConfigNow();
+  ShareSettingsWith(paths_, paths_);
   const RuntimeLaunch launch = LaunchRuntime(config_, paths_);
   if (!launch.ok) {
     CloseLaunchProgress();
     Overlay overlay;
     overlay.id = L"play.failed";
     overlay.status = 2;
-    overlay.title = L"Roblox couldn’t start";
-    overlay.body = (launch.error.empty() ? std::wstring() : launch.error + L" ") + L"Try again, or reinstall Elixir.";
-    overlay.actions = {{L"overlay.close", L"Close", ButtonStyle::kStandard}};
+    overlay.title = T(L"Roblox couldn’t start");
+    overlay.body = (launch.error.empty() ? std::wstring() : launch.error + L" ") + T(L"Try again, or reinstall Elixir.");
+    overlay.actions = {{L"overlay.close", T(L"Close"), ButtonStyle::kStandard}};
     ShowOverlay(std::move(overlay));
     return;
   }
@@ -1932,7 +2011,7 @@ void App::LaunchRuntimeNow() {
   runtime_.running = true;
   if (play_from_menu_) ShowWindow(hwnd_, SW_HIDE);
   AllowSetForegroundWindow(launch.pid);
-  ShowLaunchProgress(L"Starting Roblox…", true);
+  ShowLaunchProgress(T(L"Starting Roblox…"), true);
   if (launch.ipc_pipe != nullptr) {
     HANDLE events = nullptr;
     DuplicateHandle(GetCurrentProcess(), launch.process, GetCurrentProcess(), &events, SYNCHRONIZE, FALSE, 0);
@@ -1966,7 +2045,7 @@ void App::StopRuntime() {
   HANDLE process = nullptr;
   if (!DuplicateHandle(GetCurrentProcess(), runtime_.process, GetCurrentProcess(), &process,
                        SYNCHRONIZE | PROCESS_TERMINATE, FALSE, 0)) {
-    ShowToast(L"Couldn’t stop Roblox.");
+    ShowToast(T(L"Couldn’t stop Roblox."));
     return;
   }
   runtime_.stopping = true;
@@ -2003,7 +2082,7 @@ void App::ShowLaunchProgress(const std::wstring& message, bool can_cancel) {
   if (options_.test_mode || hwnd_ == nullptr) return;
   LaunchProgress::View view;
   view.message = message;
-  if (config_.installed.present()) view.version = L"Version: " + Utf8ToWide(config_.installed.version_name);
+  if (config_.installed.present()) view.version = TF(L"Version: {0}", Utf8ToWide(config_.installed.version_name));
   view.cancel_enabled = can_cancel;
   launch_progress_.Show(std::move(view), [this] {
     Post([this] {
@@ -2039,7 +2118,9 @@ void App::OnRuntimeExited(DWORD exit_code) {
     CloseHandle(runtime_.process);
     runtime_.process = nullptr;
   }
+  CollectSharedSettings(paths_);
   RefreshCrashLogs();
+  PrefetchAccountPictures();
   if (page_ == Page::kGlobalSettings) RefreshGlobalSettings();
   if (page_ == Page::kSettings) MeasureCaches();
   if (ShouldRestartRuntime(exit_code, stopped, GetTickCount64(), last_runtime_restart_)) {
@@ -2054,12 +2135,12 @@ void App::OnRuntimeExited(DWORD exit_code) {
     Overlay overlay;
     overlay.id = L"play.ended";
     overlay.status = 2;
-    overlay.title = L"Roblox closed unexpectedly";
+    overlay.title = T(L"Roblox closed unexpectedly");
     const std::wstring meaning = RuntimeExitMeaning(exit_code);
-    overlay.body = meaning.empty() ? std::wstring(L"Press Play to try again.") : meaning;
-    overlay.actions = {{L"overlay.close", L"Close", ButtonStyle::kStandard}};
+    overlay.body = meaning.empty() ? std::wstring(T(L"Press Play to try again.")) : meaning;
+    overlay.actions = {{L"overlay.close", T(L"Close"), ButtonStyle::kStandard}};
     if (crash_.entries.size() > crash_reports_before) {
-      overlay.actions.insert(overlay.actions.begin(), OverlayAction{L"overlay.crashes", L"Crash logs"});
+      overlay.actions.insert(overlay.actions.begin(), OverlayAction{L"overlay.crashes", T(L"Crash logs")});
     }
     ShowOverlay(std::move(overlay));
   }
@@ -2067,7 +2148,7 @@ void App::OnRuntimeExited(DWORD exit_code) {
     const InstalledApp next = *staged_roblox_;
     SwitchToInstalledVersion(next, [this, next](SwitchOutcome result, const std::wstring& message) {
       if (result == SwitchOutcome::kSwitched) {
-        ShowToast(L"Updated to Roblox " + Utf8ToWide(next.version_name) + L".");
+        ShowToast(TF(L"Updated to Roblox {0}.", Utf8ToWide(next.version_name)));
       } else if (result == SwitchOutcome::kFailed) {
         ShowToast(message);
       }
@@ -2109,7 +2190,7 @@ void App::CheckForUpdates(bool fresh) {
       if (update_.cancel != cancel || update_.stage != UpdateFlow::Stage::kChecking) return;
       if (!list.ok) {
         update_.stage = UpdateFlow::Stage::kFailed;
-        update_.error_title = L"Couldn’t check for updates";
+        update_.error_title = T(L"Couldn’t check for updates");
         update_.error = list.error;
         if (releases_.list.empty()) {
           releases_.stage = ReleaseHistory::Stage::kFailed;
@@ -2146,13 +2227,13 @@ bool App::UpdateBeforePlaying() {
   if (update_.stage == UpdateFlow::Stage::kChecking && !update_.waited) {
     update_.waited = true;
     update_.play_when_checked = true;
-    ShowLaunchProgress(L"Checking for updates…", false);
+    ShowLaunchProgress(T(L"Checking for updates…"), false);
     SetTimer(hwnd_, kUpdateWaitTimer, kUpdateWaitMs, nullptr);
     return true;
   }
   if (update_.stage != UpdateFlow::Stage::kAvailable) return false;
   update_.play_after = true;
-  ShowLaunchProgress(L"Getting the latest Elixir…", false);
+  ShowLaunchProgress(T(L"Getting the latest Elixir…"), false);
   DownloadUpdate();
   return true;
 }
@@ -2190,9 +2271,9 @@ void App::DownloadUpdate() {
         return;
       }
       update_.stage = UpdateFlow::Stage::kFailed;
-      update_.error_title = L"Elixir couldn’t update";
-      update_.error = cancel->load()        ? std::wstring(L"The download was cancelled.")
-                      : staged.error.empty() ? std::wstring(L"The update couldn’t be downloaded. Try again.")
+      update_.error_title = T(L"Elixir couldn’t update");
+      update_.error = cancel->load()        ? std::wstring(T(L"The download was cancelled."))
+                      : staged.error.empty() ? std::wstring(T(L"The update couldn’t be downloaded. Try again."))
                                              : staged.error;
       if (update_.play_after) {
         update_.play_after = false;
@@ -2220,8 +2301,8 @@ void App::InstallDownloadedUpdate() {
   if (!CreateProcessW(update_.staged.file.c_str(), command.data(), nullptr, nullptr, FALSE, 0, nullptr,
                       directory.c_str(), &startup, &process)) {
     update_.stage = UpdateFlow::Stage::kFailed;
-    update_.error_title = L"Elixir couldn’t update";
-    update_.error = WithErrorCause(L"The new version couldn’t be started.", GetLastError());
+    update_.error_title = T(L"Elixir couldn’t update");
+    update_.error = WithErrorCause(T(L"The new version couldn’t be started."), GetLastError());
     if (update_.play_after) {
       update_.play_after = false;
       CloseLaunchProgress();
@@ -2243,7 +2324,7 @@ void App::OpenPath(const std::wstring& path) {
     return;
   }
   if (IsDangerousToOpen(path)) {
-    ShowToast(L"That file is a program, so Elixir didn’t open it.");
+    ShowToast(T(L"That file is a program, so Elixir didn’t open it."));
     return;
   }
   const std::wstring extension = ExtensionOf(path);
@@ -2266,7 +2347,7 @@ void App::OpenFolder(const std::wstring& path) {
   if (options_.test_mode) return;
   EnsureDirectory(path, nullptr);
   if (!PathIsDirectory(path)) {
-    ShowToast(L"Couldn’t open that folder.");
+    ShowToast(T(L"Couldn’t open that folder."));
     return;
   }
   ShellExecuteW(hwnd_, L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
@@ -2287,7 +2368,7 @@ std::wstring App::FindDocument(const wchar_t* relative) const {
 void App::OpenDocument(const wchar_t* relative, const wchar_t* fallback_name) {
   const std::wstring path = FindDocument(relative);
   if (path.empty()) {
-    ShowToast(L"Couldn’t find " + std::wstring(fallback_name) + L". Reinstall Elixir to restore it.");
+    ShowToast(TF(L"Couldn’t find {0}. Reinstall Elixir to restore it.", fallback_name));
     return;
   }
   OpenPath(path);
@@ -2297,6 +2378,7 @@ void App::ShowOverlay(Overlay overlay) {
   if (menu_focus_ >= 0) CloseMenu();
   if (!state_.editing.empty()) EndEdit(true);
   if (!overlay_.open) overlay_return_focus_ = state_.focused;
+  closing_overlay_ = Overlay{};
   overlay_ = std::move(overlay);
   overlay_.open = true;
   state_.hovered.clear();
@@ -2307,6 +2389,10 @@ void App::ShowOverlay(Overlay overlay) {
 
 void App::CloseOverlay() {
   if (overlay_.id == L"join.leave") DropPendingJoin();
+  if (overlay_.open) {
+    closing_overlay_ = overlay_;
+    ++dialog_out_epoch_;
+  }
   overlay_ = Overlay{};
   state_.focused = overlay_return_focus_;
   Invalidate();
@@ -2329,9 +2415,9 @@ void App::OnOverlayAction(const std::wstring& id) {
       std::wstring error;
       const auto group = CrashLogGroup(crash_.entries[static_cast<std::size_t>(crash_.selected)].path);
       if (!options_.test_mode && RecycleFiles(group, &error)) {
-        ShowToast(L"Moved to the Recycle Bin.");
+        ShowToast(T(L"Moved to the Recycle Bin."));
       } else if (!error.empty()) {
-        ShowToast(L"Couldn’t delete this crash log.");
+        ShowToast(T(L"Couldn’t delete this crash log."));
       }
       RefreshCrashLogs();
     }

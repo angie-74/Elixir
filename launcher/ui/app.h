@@ -40,6 +40,7 @@
 #include "core/mods.h"
 #include "core/notices.h"
 #include "core/shortcuts.h"
+#include "core/i18n.h"
 #include "fflags/editor.h"
 #include "ui/accessibility.h"
 #include "ui/launch_menu.h"
@@ -63,7 +64,7 @@ enum class Page {
   kShortcuts
 };
 inline constexpr int kPageCount = 10;
-const wchar_t* PageTitle(Page page);
+const std::wstring& PageTitle(Page page);
 const char* PageKey(Page page);
 bool PageFromKey(std::string_view key, Page* page);
 
@@ -170,6 +171,7 @@ class App final : public AccessibilityHost {
   bool RenderOffscreen(UINT dpi, float width, float height, const std::wstring& png_path, OffscreenFrame* frame,
                        std::wstring* error);
   void SetScroll(float scroll);
+  void SetMotionClockForTest(double now_ms) { test_motion_clock_ = now_ms; }
   bool animation_timer_active() const { return animation_timer_; }
   bool motion_active() const { return motion_active_; }
   float scroll() const { return scroll_[static_cast<int>(page_)]; }
@@ -403,7 +405,9 @@ class App final : public AccessibilityHost {
   float BuildFastFlagEditor(Ui& ui, float x, float y, float width);
   float FastFlagSetting(Ui& ui, float x, float y, float width, const fflags::Preset& preset);
   float FastFlagsWarning(Ui& ui, float x, float y, float width);
-  void BuildOverlay(Ui& ui, float width, float height);
+  void BuildOverlays(Ui& ui, float width, float height);
+  void ChooseLanguage(int option);
+  void BuildOverlay(Ui& ui, float width, float height, const Overlay& overlay, float shown);
   float PageHeader(Ui& ui, float x, float y, float width, std::wstring_view title, std::wstring_view subtitle);
   float Banner(Ui& ui, float x, float y, float width, int status, std::wstring_view title, std::wstring_view body,
                float trailing = 0.0f);
@@ -468,8 +472,12 @@ class App final : public AccessibilityHost {
   void ChooseLaunchAction(LaunchMenuAction action);
   void StopRuntime();
   void ChooseInstanceAccount();
+  void ChoosePlayAccount();
+  void PlayWith(const InstanceAccount& account, const std::wstring& account_id);
+  bool AccountMenuOpen() const { return MenuOpen(kInstanceAccountControl) || MenuOpen(kPlayAccountControl); }
   void RefreshInstanceAccounts();
-  void RefreshAccountPictures();
+  void RefreshAccountPictures(int more_rounds = 3, bool wait_first = false);
+  void PrefetchAccountPictures();
   void StartInstanceWith(int row);
   void RemoveInstanceAccount(int row);
   bool OnInstanceOverlayAction(const std::wstring& id);
@@ -605,6 +613,8 @@ class App final : public AccessibilityHost {
   std::vector<ExtraWindow> extra_windows_;
   std::vector<InstanceAccountRow> instance_accounts_;
   InstanceAccount pending_instance_account_;
+  std::wstring pending_account_id_;
+  bool pending_account_for_play_ = false;
   bool account_pictures_loading_ = false;
   ULONGLONG account_pictures_checked_ = 0;
   bool opening_window_ = false;
@@ -620,9 +630,16 @@ class App final : public AccessibilityHost {
   std::wstring global_quality_override_;
   bool global_data_in_use_ = false;
   static constexpr wchar_t kTextSizeControl[] = L"global.textsize";
+  static constexpr wchar_t kLanguageControl[] = L"settings.language";
   static constexpr wchar_t kInstanceAccountControl[] = L"bar.window";
-  static constexpr std::array<const wchar_t*, 4> kTextSizes{L"Medium", L"Large", L"Larger", L"Largest"};
+  static constexpr wchar_t kPlayAccountControl[] = L"bar.play";
+  static constexpr std::array<const wchar_t*, 4> kTextSizes{ELIXIR_TR(L"Medium"), ELIXIR_TR(L"Large"),
+                                                            ELIXIR_TR(L"Larger"), ELIXIR_TR(L"Largest")};
   std::wstring menu_control_;
+  float menu_scroll_ = 0.0f;
+  float menu_max_scroll_ = 0.0f;
+  float menu_height_ = 0.0f;
+  bool menu_reveal_ = false;
   int menu_focus_ = -1;
   int menu_count_ = 0;
   struct PendingMenu {
@@ -667,8 +684,10 @@ class App final : public AccessibilityHost {
   RobloxVersionList roblox_list_;
   std::optional<InstalledApp> staged_roblox_;
   Overlay overlay_;
+  Overlay closing_overlay_;
   std::wstring overlay_return_focus_;
   std::wstring toast_;
+  std::wstring leaving_toast_;
   std::wstring search_text_;
   std::vector<int> search_hits_;
   bool search_enter_ = false;
@@ -696,7 +715,9 @@ class App final : public AccessibilityHost {
   std::wstring shown_dialog_;
   unsigned page_epoch_ = 0;
   unsigned toast_epoch_ = 0;
+  unsigned toast_out_epoch_ = 0;
   unsigned dialog_epoch_ = 0;
+  unsigned dialog_out_epoch_ = 0;
   std::array<float, kPageCount> scroll_{};
   std::array<float, kPageCount> scroll_target_{};
   double scroll_tick_ = 0.0;
@@ -711,6 +732,7 @@ class App final : public AccessibilityHost {
   Animator animator_;
   bool motion_enabled_ = true;
   bool motion_active_ = false;
+  double test_motion_clock_ = -1.0;
   bool tracking_mouse_ = false;
   std::wstring drag_slider_;
   AccessibleRoot* accessible_ = nullptr;

@@ -13,6 +13,7 @@
 #include "core/process.h"
 #include "core/sha256.h"
 #include "core/util.h"
+#include "core/i18n.h"
 
 namespace elixir::launcher {
 
@@ -21,11 +22,11 @@ namespace {
 constexpr DWORD kToolTimeoutMs = 10 * 60 * 1000;
 constexpr char kGuestAbi[] = "x86_64";
 
-constexpr wchar_t kComponentBroken[] = L"Part of Elixir isn’t working. Reinstall Elixir and try again.";
-constexpr wchar_t kNotRoblox[] = L"The file isn’t Roblox, or it’s damaged.";
-constexpr wchar_t kNotOfficial[] = L"This isn’t an official Roblox file.";
-constexpr wchar_t kInstallFailed[] = L"Try again.";
-constexpr wchar_t kNotForPc[] = L"This version of Roblox doesn’t work on PCs.";
+constexpr wchar_t kComponentBroken[] = ELIXIR_TR(L"Part of Elixir isn’t working. Reinstall Elixir and try again.");
+constexpr wchar_t kNotRoblox[] = ELIXIR_TR(L"The file isn’t Roblox, or it’s damaged.");
+constexpr wchar_t kNotOfficial[] = ELIXIR_TR(L"This isn’t an official Roblox file.");
+constexpr wchar_t kInstallFailed[] = ELIXIR_TR(L"Try again.");
+constexpr wchar_t kNotForPc[] = ELIXIR_TR(L"This version of Roblox doesn’t work on PCs.");
 
 struct ToolRun {
   bool started = false;
@@ -69,14 +70,14 @@ ToolRun RunTool(const ApkComponent& component, std::vector<std::wstring> argumen
   return run;
 }
 
-std::wstring ToolFailure(const ToolRun& run, const wchar_t* message) {
-  if (!run.started) return kComponentBroken;
+std::wstring ToolFailure(const ToolRun& run, const std::wstring& message) {
+  if (!run.started) return T(kComponentBroken);
   if (run.cancelled) return L"Cancelled.";
   return message;
 }
 
 std::wstring InstallFailure(const std::wstring& cause) {
-  return cause.empty() ? std::wstring(kInstallFailed) : cause + L" " + kInstallFailed;
+  return cause.empty() ? std::wstring(T(kInstallFailed)) : cause + L" " + T(kInstallFailed);
 }
 
 std::wstring InstallFailure(DWORD code) { return InstallFailure(ErrorCause(code)); }
@@ -139,12 +140,12 @@ ApkComponent LocateApkComponent(const std::wstring& exe_dir) {
   }
 #endif
   component.found = !component.path.empty();
-  if (!component.found) component.explanation = L"Part of Elixir is missing. Reinstall Elixir to install Roblox.";
+  if (!component.found) component.explanation = T(L"Part of Elixir is missing. Reinstall Elixir to install Roblox.");
   const std::wstring trust = JoinPath(exe_dir, L"config\\roblox_signing_certificates.json");
   if (PathIsFile(trust)) component.trust_manifest = trust;
 #else
   (void)exe_dir;
-  component.explanation = L"This version of Elixir can’t install Roblox.";
+  component.explanation = T(L"This version of Elixir can’t install Roblox.");
 #endif
   return component;
 }
@@ -272,18 +273,18 @@ ApkResult ValidateApk(const ApkComponent& component, const std::wstring& input, 
     result.log += "$ tar -x -f " + WideToUtf8(QuoteArgument(input)) + "\n" + unpack.stdout_text + unpack.stderr_text;
     if (!unpack.started) result.log += WideToUtf8(unpack.error) + "\n";
     if (!unpack.started || unpack.exit_code != 0) {
-      result.error = L"That file couldn’t be opened. It may be damaged. Choose another file.";
+      result.error = T(L"That file couldn’t be opened. It may be damaged. Choose another file.");
       return result;
     }
     apks = FindApks(directory);
     if (apks.empty()) {
-      result.error = L"That file isn’t Roblox. Choose another file.";
+      result.error = T(L"That file isn’t Roblox. Choose another file.");
       return result;
     }
   } else if (extension == L".apk") {
     apks.push_back(input);
   } else {
-    result.error = L"That file isn’t Roblox. Choose another file.";
+    result.error = T(L"That file isn’t Roblox. Choose another file.");
     return result;
   }
   ApkResult files = ValidateApkFiles(component, apks, progress, cancel);
@@ -335,7 +336,7 @@ ApkResult ValidateApkFiles(const ApkComponent& component, const std::vector<std:
     return result;
   }
   if (apks.empty()) {
-    result.error = L"There’s no file to check.";
+    result.error = T(L"There’s no file to check.");
     return result;
   }
   std::vector<ApkFileReport> reports;
@@ -343,13 +344,13 @@ ApkResult ValidateApkFiles(const ApkComponent& component, const std::vector<std:
     Report(progress, 5 + static_cast<int>(45 * i / apks.size()), "Reading the file");
     const ToolRun run = RunTool(component, {L"inspect", apks[i]}, &result.log, cancel);
     if (!run.started || run.exit_code != 0) {
-      result.error = ToolFailure(run, kNotRoblox);
+      result.error = ToolFailure(run, T(kNotRoblox));
       return result;
     }
     ApkFileReport report;
     std::string parse_error;
     if (!ParseInspectReport(run.out, &report, &parse_error)) {
-      result.error = kComponentBroken;
+      result.error = T(kComponentBroken);
       return result;
     }
     report.path = apks[i];
@@ -360,19 +361,19 @@ ApkResult ValidateApkFiles(const ApkComponent& component, const std::vector<std:
   for (std::size_t i = 0; i < reports.size(); ++i) {
     if (reports[i].split.empty() || reports[i].split == "base") {
       if (base != reports.size()) {
-        result.error = L"This file contains more than one base APK. Choose a single Roblox bundle.";
+        result.error = T(L"This file contains more than one base APK. Choose a single Roblox bundle.");
         return result;
       }
       base = i;
     }
   }
   if (base == reports.size()) {
-    result.error = L"That file is only part of Roblox. Choose the full file.";
+    result.error = T(L"That file is only part of Roblox. Choose the full file.");
     return result;
   }
   const ApkFileReport& base_report = reports[base];
   if (base_report.package != kRobloxPackage) {
-    result.error = kNotRoblox;
+    result.error = T(kNotRoblox);
     return result;
   }
   ApkMetadata& metadata = result.metadata;
@@ -383,11 +384,11 @@ ApkResult ValidateApkFiles(const ApkComponent& component, const std::vector<std:
   for (std::size_t i = 0; i < reports.size(); ++i) {
     const ApkFileReport& report = reports[i];
     if (report.package != metadata.package || report.version_code != metadata.version_code) {
-      result.error = L"The parts of this file don’t match. Download it again.";
+      result.error = T(L"The parts of this file don’t match. Download it again.");
       return result;
     }
     if (i != base && Contains(metadata.splits, report.split)) {
-      result.error = L"This file contains duplicate Roblox splits. Choose another bundle.";
+      result.error = T(L"This file contains duplicate Roblox splits. Choose another bundle.");
       return result;
     }
     for (const std::string& abi : report.abis) {
@@ -433,7 +434,7 @@ ApkResult ValidateApkFiles(const ApkComponent& component, const std::vector<std:
     result.ok = true;
   } else {
     metadata.signer_status = "Not an official Roblox file";
-    result.error = kNotOfficial;
+    result.error = T(kNotOfficial);
   }
   Report(progress, 100, all_verified ? "Done" : "Check failed");
   return result;
@@ -449,11 +450,11 @@ ApkResult InstallApk(const ApkComponent& component, const ApkMetadata& validated
     return result;
   }
   if (!validated.signature_verified || validated.apk_files.empty()) {
-    result.error = L"Only an official Roblox file can be installed.";
+    result.error = T(L"Only an official Roblox file can be installed.");
     return result;
   }
   if (!Contains(validated.abis, kGuestAbi)) {
-    result.error = std::wstring(kNotForPc) + L" Choose another file.";
+    result.error = T(kNotForPc) + L" " + T(L"Choose another file.");
     return result;
   }
   const std::wstring destination = AppInstallDirectory(apps_dir, validated.package, validated.version_code);
@@ -487,29 +488,29 @@ ApkResult InstallApk(const ApkComponent& component, const ApkMetadata& validated
     const ToolRun run = RunTool(component, {L"inspect", copies[i]}, &result.log, cancel);
     ApkFileReport report;
     std::string parse_error;
-    if (!run.started || run.exit_code != 0) return fail(ToolFailure(run, kInstallFailed));
-    if (!ParseInspectReport(run.out, &report, &parse_error)) return fail(kComponentBroken);
+    if (!run.started || run.exit_code != 0) return fail(ToolFailure(run, T(kInstallFailed)));
+    if (!ParseInspectReport(run.out, &report, &parse_error)) return fail(T(kComponentBroken));
     if (report.package != validated.package || report.version_code != validated.version_code) {
-      return fail(L"The file changed after it was checked. Try again.");
+      return fail(T(L"The file changed after it was checked. Try again."));
     }
     if (!report.trusted || !report.signature_verified || !Contains(report.certificates, validated.signer_sha256)) {
-      return fail(kNotOfficial);
+      return fail(T(kNotOfficial));
     }
     if (native_source.empty() && report.has_x86_64_engine) native_source = copies[i];
   }
-  if (native_source.empty()) return fail(kNotForPc);
+  if (native_source.empty()) return fail(T(kNotForPc));
 
   Report(progress, 60, "Unpacking Roblox");
   {
     const ToolRun run = RunTool(component, {L"extract", native_source, JoinPath(staging, L"lib")}, &result.log, cancel);
-    if (!run.started || run.exit_code != 0) return fail(ToolFailure(run, kInstallFailed));
+    if (!run.started || run.exit_code != 0) return fail(ToolFailure(run, T(kInstallFailed)));
   }
   Report(progress, 70, "Unpacking Roblox’s content");
   {
     const ToolRun run = RunTool(component, {L"extract", copies.front(), JoinPath(staging, L"assets"), L"--prefix",
                                             L"assets/"},
                                 &result.log, cancel);
-    if (!run.started || run.exit_code != 0) return fail(ToolFailure(run, kInstallFailed));
+    if (!run.started || run.exit_code != 0) return fail(ToolFailure(run, T(kInstallFailed)));
     if (!PathIsDirectory(JoinPath(staging, L"assets")) && !EnsureDirectory(JoinPath(staging, L"assets"), &result.error)) {
       return fail(InstallFailure(result.error));
     }
@@ -518,7 +519,7 @@ ApkResult InstallApk(const ApkComponent& component, const ApkMetadata& validated
     if (copy == native_source || copy == copies.front()) continue;
     Report(progress, 80, "Checking Roblox");
     const ToolRun run = RunTool(component, {L"verify", copy}, &result.log, cancel);
-    if (!run.started || run.exit_code != 0) return fail(ToolFailure(run, kInstallFailed));
+    if (!run.started || run.exit_code != 0) return fail(ToolFailure(run, T(kInstallFailed)));
   }
 
   Json record = Json::MakeObject();
@@ -577,14 +578,14 @@ ApkResult EnsureInstalledAssets(const ApkComponent& component, const std::wstrin
   }
   const std::wstring base = JoinPath(install_dir, L"base.apk");
   if (!PathIsFile(base)) {
-    result.error = L"Roblox isn’t installed correctly. Install it again.";
+    result.error = T(L"Roblox isn’t installed correctly. Install it again.");
     return result;
   }
   const std::wstring staging = assets + L".extracting-" + UtcFileStamp();
   const ToolRun run = RunTool(component, {L"extract", base, staging, L"--prefix", L"assets/"}, &result.log, cancel);
   if (!run.started || run.exit_code != 0) {
     DeleteDirectoryTree(staging);
-    result.error = ToolFailure(run, L"Roblox couldn’t be prepared. Install it again.");
+    result.error = ToolFailure(run, T(L"Roblox couldn’t be prepared. Install it again."));
     return result;
   }
   if (!PathIsDirectory(staging) && !EnsureDirectory(staging, &result.error)) return result;
@@ -595,7 +596,7 @@ ApkResult EnsureInstalledAssets(const ApkComponent& component, const std::wstrin
       result.ok = true;
       return result;
     }
-    result.error = WithErrorCause(L"Roblox couldn’t be prepared.", code);
+    result.error = WithErrorCause(T(L"Roblox couldn’t be prepared."), code);
     return result;
   }
   result.ok = true;

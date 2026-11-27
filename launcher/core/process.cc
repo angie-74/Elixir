@@ -20,6 +20,7 @@
 #include "core/json.h"
 #include "core/mods.h"
 #include "core/util.h"
+#include "core/i18n.h"
 
 namespace elixir::launcher {
 
@@ -266,6 +267,8 @@ std::vector<std::wstring> BuildRuntimeArguments(const LauncherConfig& config, co
   const auto on_off = [](bool value) { return std::wstring(value ? L"on" : L"off"); };
   wchar_t scale[32];
   std::swprintf(scale, 32, L"%.2f", ResolutionScaleOrDefault(config.graphics.resolution_scale));
+  wchar_t stretch[32];
+  std::swprintf(stretch, 32, L"%.2f", StretchOrDefault(config.graphics.stretch));
   std::vector<std::wstring> args;
   if (config.installed.present()) {
     args.insert(args.end(), {L"--package", Utf8ToWide(config.installed.package), L"--version-code",
@@ -279,6 +282,7 @@ std::vector<std::wstring> BuildRuntimeArguments(const LauncherConfig& config, co
                L"--fflags", fflags, L"--guest-runtime", paths.guest_runtime_dir,
                L"--renderer", Utf8ToWide(config.graphics.renderer),
                L"--resolution-scale", scale,
+               L"--stretch", stretch,
                L"--audio-device",
                config.audio.output_device_id.empty() ? L"default" : Utf8ToWide(config.audio.output_device_id),
                L"--timer-resolution-1ms", on_off(config.performance.timer_resolution_1ms),
@@ -449,20 +453,20 @@ bool SendRuntimeJoin(HANDLE pipe, const std::string& request) {
 
 std::wstring RuntimeExitMeaning(DWORD code) {
   switch (code) {
-    case 0: return L"Roblox closed.";
-    case 2: return L"Elixir couldn’t start Roblox. Reinstall Elixir and try again.";
-    case 3: return L"A setting stopped Roblox from starting. Check your Fast Flags and try again.";
-    case 4: return L"Roblox couldn’t start on this PC. Try again, or reinstall Elixir.";
-    case 5: return L"Roblox isn’t installed correctly. Reinstall Roblox and try again.";
-    case 6: return L"Roblox couldn’t load. Reinstall Roblox and try again.";
-    case 7: return L"This version of Roblox isn’t supported yet.";
-    case 10: return L"This version of Elixir can’t open the game window. Reinstall Elixir.";
-    case 11: return L"Part of Elixir is missing. Reinstall Elixir.";
-    case 12: return L"Part of Elixir is out of date. Reinstall Elixir.";
-    case 137: return L"Roblox ran out of memory. Close other apps and try again.";
+    case 0: return T(L"Roblox closed.");
+    case 2: return T(L"Elixir couldn’t start Roblox. Reinstall Elixir and try again.");
+    case 3: return T(L"A setting stopped Roblox from starting. Check your Fast Flags and try again.");
+    case 4: return T(L"Roblox couldn’t start on this PC. Try again, or reinstall Elixir.");
+    case 5: return T(L"Roblox isn’t installed correctly. Reinstall Roblox and try again.");
+    case 6: return T(L"Roblox couldn’t load. Reinstall Roblox and try again.");
+    case 7: return T(L"This version of Roblox isn’t supported yet.");
+    case 10: return T(L"This version of Elixir can’t open the game window. Reinstall Elixir.");
+    case 11: return T(L"Part of Elixir is missing. Reinstall Elixir.");
+    case 12: return T(L"Part of Elixir is out of date. Reinstall Elixir.");
+    case 137: return T(L"Roblox ran out of memory. Close other apps and try again.");
     default: break;
   }
-  if (code >= 0xC0000000u || code == 0x80000003u) return L"Roblox crashed.";
+  if (code >= 0xC0000000u || code == 0x80000003u) return T(L"Roblox crashed.");
   return {};
 }
 
@@ -477,7 +481,7 @@ RuntimeLaunch StartRuntime(const LauncherConfig& config, const LauncherPaths& pa
                            std::vector<std::wstring> arguments, bool events) {
   RuntimeLaunch launch;
   if (!PathIsFile(paths.runtime_exe)) {
-    launch.error = L"Part of Elixir is missing. Reinstall Elixir.";
+    launch.error = T(L"Part of Elixir is missing. Reinstall Elixir.");
     return launch;
   }
   std::wstring pipe_name;

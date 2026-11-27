@@ -10,17 +10,23 @@
 #include <cwchar>
 #include <cwctype>
 #include <filesystem>
+#include <optional>
 #include <system_error>
 #include <vector>
 
 #include "core/accounts.h"
+#include "core/json.h"
+#include "core/shared_settings.h"
 #include "core/util.h"
+#include "core/i18n.h"
 
 namespace elixir::launcher {
 namespace {
 
 constexpr wchar_t kSessionFile[] = L"roblox-session.dpapi";
 constexpr wchar_t kCookiesFile[] = L"roblox-cookies.dpapi";
+constexpr wchar_t kAccountFile[] = L"roblox-account.json";
+constexpr wchar_t kPreviousSuffix[] = L".previous";
 
 std::wstring Lower(std::wstring text) {
   std::transform(text.begin(), text.end(), text.begin(), [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
@@ -168,7 +174,7 @@ bool PrepareInstance(const LauncherConfig& config, const LauncherPaths& paths, i
                      const InstanceAccount& account) {
   if (account.sign_in == InstanceSignIn::kSavedAccount &&
       !IsSavedAccountSession(paths.accounts_dir, account.session_file)) {
-    if (error != nullptr) *error = L"that saved account is no longer there";
+    if (error != nullptr) *error = T(L"that saved account is no longer there");
     return false;
   }
   const LauncherPaths target = InstancePaths(paths, instance);
@@ -194,14 +200,14 @@ bool PrepareInstance(const LauncherConfig& config, const LauncherPaths& paths, i
   const std::wstring target_auth_folder = JoinPath(target.data_root, L"auth");
   const std::wstring target_auth = JoinPath(target_auth_folder, kSessionFile);
   const auto copy_failed = [error] {
-    if (error != nullptr) *error = L"could not copy the saved sign-in";
+    if (error != nullptr) *error = T(L"could not copy the saved sign-in");
     return false;
   };
   const std::wstring source_cookies = JoinPath(source_auth_folder, kCookiesFile);
   const std::wstring target_cookies = JoinPath(target_auth_folder, kCookiesFile);
   if (account.sign_in != InstanceSignIn::kKeep) {
     if (PathIsFile(target_cookies) && !DeleteFileW(target_cookies.c_str())) {
-      if (error != nullptr) *error = L"could not remove the cookies of the account the window had before";
+      if (error != nullptr) *error = T(L"could not remove the cookies of the account the window had before");
       return false;
     }
   } else if (!PathIsFile(target_cookies) && PathIsFile(source_cookies) && !PathIsFile(target_auth)) {
@@ -231,10 +237,71 @@ bool PrepareInstance(const LauncherConfig& config, const LauncherPaths& paths, i
     }
     case InstanceSignIn::kSignedOut:
       if (PathIsFile(target_auth) && !DeleteFileW(target_auth.c_str())) {
-        if (error != nullptr) *error = L"could not remove the saved sign-in";
+        if (error != nullptr) *error = T(L"could not remove the saved sign-in");
         return false;
       }
       break;
+  }
+  ShareSettingsWith(paths, target);
+  return true;
+}
+
+bool HasSavedSignIn(const std::wstring& data_root) {
+  return PathIsFile(JoinPath(JoinPath(data_root, L"auth"), kSessionFile));
+}
+
+std::wstring SignedInAccountId(const std::wstring& data_root) {
+  if (!HasSavedSignIn(data_root)) return {};
+  std::string text;
+  if (!ReadFileBytes(JoinPath(JoinPath(data_root, L"auth"), kAccountFile), &text, nullptr, 4096)) return {};
+  const std::optional<Json> details = Json::Parse(text, nullptr);
+  if (!details || !details->is_object()) return {};
+  const std::int64_t id = details->GetInt("userId", 0);
+  return id > 0 ? std::to_wstring(id) : std::wstring();
+}
+
+bool PrepareMainAccount(const LauncherPaths& paths, const InstanceAccount& account, const std::wstring& account_id,
+                        std::wstring* error) {
+  const auto fail = [error](const std::wstring& text) {
+    if (error != nullptr) *error = text;
+    return false;
+  };
+  if (account.sign_in == InstanceSignIn::kKeep) return true;
+  if (DataFolderInUse(paths.data_root)) return fail(T(L"Roblox is still open"));
+  if (account.sign_in == InstanceSignIn::kSavedAccount &&
+      !IsSavedAccountSession(paths.accounts_dir, account.session_file)) {
+    return fail(T(L"that saved account is no longer there"));
+  }
+  const std::wstring folder = JoinPath(paths.data_root, L"auth");
+  const std::wstring session = JoinPath(folder, kSessionFile);
+  const std::wstring cookies = JoinPath(folder, kCookiesFile);
+  const std::wstring marker = JoinPath(folder, kAccountFile);
+  const std::wstring current = SignedInAccountId(paths.data_root);
+  if (account.sign_in == InstanceSignIn::kSavedAccount && !account_id.empty() && current == account_id) return true;
+  if (PathIsFile(session)) {
+    const bool kept_elsewhere =
+        !current.empty() &&
+        IsSavedAccountSession(paths.accounts_dir,
+                              JoinPath(JoinPath(paths.accounts_dir, current), kAccountSessionFile));
+    if (!kept_elsewhere) CopyFileW(session.c_str(), (session + kPreviousSuffix).c_str(), FALSE);
+  }
+  if (PathIsFile(cookies) && !DeleteFileW(cookies.c_str())) {
+    return fail(T(L"could not remove the cookies of the account the window had before"));
+  }
+  DeleteFileW(marker.c_str());
+  if (account.sign_in == InstanceSignIn::kSignedOut) {
+    if (PathIsFile(session) && !DeleteFileW(session.c_str())) return fail(T(L"could not remove the saved sign-in"));
+    return true;
+  }
+  const std::wstring partial = session + L".part";
+  if (!EnsureDirectory(paths.data_root, error)) return false;
+  if (!CreatePrivateFolder(folder) || !CopyFileW(account.session_file.c_str(), partial.c_str(), FALSE) ||
+      !MoveFileExW(partial.c_str(), session.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+    DeleteFileW(partial.c_str());
+    return fail(T(L"could not copy the saved sign-in"));
+  }
+  if (!account_id.empty()) {
+    AtomicWriteFile(marker, "{\"userId\": " + WideToUtf8(account_id) + "}\n", AtomicWriteBackup::kNone, nullptr);
   }
   return true;
 }
