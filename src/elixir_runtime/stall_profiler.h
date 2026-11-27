@@ -31,6 +31,8 @@ class StallProfiler final {
   std::unique_ptr<Impl> impl_;
 };
 
+bool StallProfilerCanReadUnwindData(std::uintptr_t address) noexcept;
+
 }
 
 #endif

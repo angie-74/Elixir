@@ -91,7 +91,16 @@ class GuestThreadState {
 GuestThreadState* CurrentGuestThread() noexcept;
 GuestThreadState* EnsureGuestThread();
 void ActivateGuestThreadPointer() noexcept;
+void ResumeGuestThread() noexcept;
 void ReleaseCurrentGuestThread() noexcept;
+
+class GuestThreadResume {
+ public:
+  GuestThreadResume() noexcept = default;
+  ~GuestThreadResume() { ResumeGuestThread(); }
+  GuestThreadResume(const GuestThreadResume&) = delete;
+  GuestThreadResume& operator=(const GuestThreadResume&) = delete;
+};
 
 using GuestThreadExitHook = void (*)(GuestThreadState* state);
 void SetGuestThreadExitHook(GuestThreadExitHook hook) noexcept;

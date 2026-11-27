@@ -448,6 +448,7 @@ ELIXIR_BIONIC_FN(int, pthread_create)(guest::PthreadT* thread_out, const guest::
 ELIXIR_BIONIC_FN(void, pthread_exit)(void* return_value) noexcept { internal::ExitCurrentThread(return_value); }
 
 ELIXIR_BIONIC_FN(int, pthread_join)(guest::PthreadT thread, void** return_value) noexcept {
+  const elixir::platform::GuestThreadResume resume;
   return internal::JoinThread(thread, return_value);
 }
 

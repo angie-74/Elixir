@@ -16,6 +16,17 @@ std::atomic<int> g_timer_requests{0};
 std::atomic<bool> g_mmcss_enabled{true};
 
 constexpr ULONG kIgnoreTimerResolution = 0x4;
+constexpr unsigned long kOneMillisecond = 10000;
+
+using SetTimerResolutionFn = LONG(NTAPI*)(ULONG, BOOLEAN, PULONG);
+using QueryTimerResolutionFn = LONG(NTAPI*)(PULONG, PULONG, PULONG);
+
+template <typename Function>
+Function NtdllFunction(const char* name) {
+  const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+  if (ntdll == nullptr) return nullptr;
+  return reinterpret_cast<Function>(reinterpret_cast<void*>(GetProcAddress(ntdll, name)));
+}
 
 std::string WindowsError(DWORD code) { return "Windows error " + std::to_string(code); }
 
@@ -105,22 +116,51 @@ std::string CurrentPowerThrottlingState() {
 }
 
 TimerResolutionScope::TimerResolutionScope(bool enable) {
-  if (enable && timeBeginPeriod(1) == TIMERR_NOERROR) {
-    active_ = true;
-    g_timer_requests.fetch_add(1);
-  }
+  if (!enable || timeBeginPeriod(1) != TIMERR_NOERROR) return;
+  active_ = true;
+  resolution_ = kOneMillisecond;
+  g_timer_requests.fetch_add(1);
+  const auto query = NtdllFunction<QueryTimerResolutionFn>("NtQueryTimerResolution");
+  const auto set = NtdllFunction<SetTimerResolutionFn>("NtSetTimerResolution");
+  ULONG coarsest = 0, finest = 0, current = 0;
+  if (query == nullptr || set == nullptr || query(&coarsest, &finest, &current) < 0) return;
+  if (finest == 0 || finest >= kOneMillisecond) return;
+  ULONG actual = 0;
+  if (set(finest, TRUE, &actual) < 0) return;
+  finest_ = finest;
+  resolution_ = finest;
 }
 
 TimerResolutionScope::~TimerResolutionScope() { Release(); }
 
 void TimerResolutionScope::Release() {
   if (!active_) return;
+  if (finest_ != 0) {
+    if (const auto set = NtdllFunction<SetTimerResolutionFn>("NtSetTimerResolution")) {
+      ULONG actual = 0;
+      set(finest_, FALSE, &actual);
+    }
+    finest_ = 0;
+  }
   timeEndPeriod(1);
   active_ = false;
+  resolution_ = 0;
   g_timer_requests.fetch_sub(1);
 }
 
 int ActiveTimerResolutionRequests() { return g_timer_requests.load(); }
+
+std::string TimerResolutionText(unsigned long resolution_100ns) {
+  std::string text = std::to_string(resolution_100ns / kOneMillisecond);
+  const unsigned long fraction = resolution_100ns % kOneMillisecond;
+  if (fraction != 0) {
+    std::string digits = std::to_string(fraction);
+    digits.insert(0, 4 - digits.size(), '0');
+    while (digits.back() == '0') digits.pop_back();
+    text += "." + digits;
+  }
+  return text + " ms";
+}
 
 const wchar_t* MmcssTaskName(MmcssTask task) { return task == MmcssTask::kGames ? L"Games" : L"Pro Audio"; }
 

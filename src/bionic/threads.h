@@ -18,6 +18,10 @@ void AddThreadExitCallback(abi::SysvFn<void(void*)> fn, void* arg, void* dso_han
 int FutexWait(volatile std::int32_t* word, std::int32_t expected, std::int64_t timeout_ns) noexcept;
 void FutexWake(volatile std::int32_t* word, bool all) noexcept;
 
+enum class WordWait { kWoken, kTimedOut };
+WordWait WaitOnWord(volatile std::int32_t* word, std::int32_t expected, std::int64_t timeout_ns) noexcept;
+bool WordWaitsKeepTheirTimeout() noexcept;
+
 }
 
 #endif

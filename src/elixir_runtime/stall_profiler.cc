@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <cstring>
 #include <cwchar>
 #include <cwctype>
 #include <map>
@@ -218,6 +219,50 @@ struct Sample {
   bool ok = false;
 };
 
+struct FrameLookup {
+  PRUNTIME_FUNCTION function = nullptr;
+  DWORD64 image_base = 0;
+  std::uint8_t frame_register = 0;
+  bool ok = false;
+};
+
+std::uint32_t LoadDword(const void* address) {
+  std::uint32_t value = 0;
+  std::memcpy(&value, address, sizeof(value));
+  return value;
+}
+
+std::uint32_t (*volatile g_load_dword)(const void*) = &LoadDword;
+
+__declspec(noinline) FrameLookup LookupFrame(DWORD64 rip) noexcept {
+  FrameLookup lookup;
+  __try {
+    lookup.function = RtlLookupFunctionEntry(rip, &lookup.image_base, nullptr);
+    if (lookup.function != nullptr) {
+      const std::uint32_t unwind_data = g_load_dword(&lookup.function->UnwindData);
+      const std::uint32_t header = g_load_dword(reinterpret_cast<const void*>(lookup.image_base + unwind_data));
+      lookup.frame_register = static_cast<std::uint8_t>((header >> 24) & 0x0F);
+    }
+    lookup.ok = true;
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    lookup.function = nullptr;
+    lookup.ok = false;
+  }
+  return lookup;
+}
+
+__declspec(noinline) bool UnwindFrame(const FrameLookup& lookup, CONTEXT* context) noexcept {
+  __try {
+    PVOID handler_data = nullptr;
+    DWORD64 establisher = 0;
+    RtlVirtualUnwind(UNW_FLAG_NHANDLER, lookup.image_base, context->Rip, lookup.function, context, &handler_data,
+                     &establisher, nullptr);
+    return true;
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return false;
+  }
+}
+
 template <typename FindModule>
 std::uintptr_t UnwindTo(const Sample& sample, FindModule find, bool stop_outside_windows);
 
@@ -248,19 +293,17 @@ std::uintptr_t UnwindTo(const Sample& sample, FindModule find, bool stop_outside
     if (module == nullptr) return stop_outside_windows ? 0 : static_cast<std::uintptr_t>(context.Rip);
     if (stop_outside_windows && !module->windows) return static_cast<std::uintptr_t>(context.Rip);
     if (!in_copy(static_cast<std::uintptr_t>(context.Rsp))) return 0;
-    DWORD64 image_base = 0;
-    PRUNTIME_FUNCTION function = RtlLookupFunctionEntry(context.Rip, &image_base, nullptr);
-    if (function == nullptr) {
+    const FrameLookup lookup = LookupFrame(context.Rip);
+    if (!lookup.ok) return 0;
+    if (lookup.function == nullptr) {
       context.Rip = *reinterpret_cast<const DWORD64*>(context.Rsp);
       context.Rsp += 8;
     } else {
-      const auto* unwind_info = reinterpret_cast<const std::uint8_t*>(image_base + function->UnwindData);
-      const std::uint8_t frame_register = unwind_info[3] & 0x0F;
-      if (frame_register != 0 && (frame_register != 5 || !in_copy(static_cast<std::uintptr_t>(context.Rbp)))) return 0;
-      PVOID handler_data = nullptr;
-      DWORD64 establisher = 0;
-      RtlVirtualUnwind(UNW_FLAG_NHANDLER, image_base, context.Rip, function, &context, &handler_data, &establisher,
-                       nullptr);
+      if (lookup.frame_register != 0 &&
+          (lookup.frame_register != 5 || !in_copy(static_cast<std::uintptr_t>(context.Rbp)))) {
+        return 0;
+      }
+      if (!UnwindFrame(lookup, &context)) return 0;
     }
     rebase(&context.Rbp);
     if (context.Rip == 0) return 0;
@@ -346,6 +389,24 @@ class StallProfiler::Impl {
         lines.push_back(inside);
       }
     }
+    if (presenter_seen_ > 0) {
+      const auto share = [this](unsigned count) { return std::to_string(count * 100 / presenter_seen_) + "%"; };
+      unsigned elsewhere = 0;
+      const std::pair<const std::string, unsigned>* most = nullptr;
+      for (const auto& wait : presenter_waits_) {
+        elsewhere += wait.second;
+        if (most == nullptr || wait.second > most->second) most = &wait;
+      }
+      std::string line = "  presenting thread: running in " + share(presenter_ran_) +
+                         " of the snapshots, waiting in the graphics driver in " + share(presenter_in_driver_) +
+                         ", waiting elsewhere in " + share(elsewhere);
+      if (most != nullptr) line += " (most often " + most->first + ", " + share(most->second) + ")";
+      lines.push_back(line);
+    }
+    presenter_waits_.clear();
+    presenter_seen_ = 0;
+    presenter_ran_ = 0;
+    presenter_in_driver_ = 0;
     busy_modules_.clear();
     busy_places_.clear();
     busy_own_.clear();
@@ -528,11 +589,22 @@ class StallProfiler::Impl {
 
   void BusySnapshot() {
     Capture();
+    const DWORD presenter = present_thread_->load(std::memory_order_relaxed);
     std::lock_guard<std::mutex> lock(mutex_);
     ++busy_snapshots_;
     for (std::size_t i = 0; i < threads_.size(); ++i) {
       if (!samples_[i].ok) continue;
       const Place place = Classify(samples_[i]);
+      if (threads_[i].id == presenter) {
+        ++presenter_seen_;
+        if (!place.waiting) {
+          ++presenter_ran_;
+        } else if (place.driver) {
+          ++presenter_in_driver_;
+        } else {
+          ++presenter_waits_[place.text];
+        }
+      }
       if (place.waiting) continue;
       ++busy_running_;
       std::string module = place.text;
@@ -774,6 +846,10 @@ class StallProfiler::Impl {
   std::map<std::string, unsigned> busy_own_;
   unsigned busy_snapshots_ = 0;
   unsigned busy_running_ = 0;
+  std::map<std::string, unsigned> presenter_waits_;
+  unsigned presenter_seen_ = 0;
+  unsigned presenter_ran_ = 0;
+  unsigned presenter_in_driver_ = 0;
   bool trace_on_ = false;
   std::int64_t trace_since_us_ = 0;
   std::int64_t last_stall_us_ = 0;
@@ -788,6 +864,8 @@ StallProfiler::StallProfiler(const std::atomic<std::int64_t>* last_present_us,
     : impl_(std::make_unique<Impl>(last_present_us, average_gap_us, present_thread, now_us)) {}
 
 StallProfiler::~StallProfiler() = default;
+
+bool StallProfilerCanReadUnwindData(std::uintptr_t address) noexcept { return LookupFrame(address).ok; }
 
 void StallProfiler::Start() { impl_->Start(); }
 

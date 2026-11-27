@@ -10,6 +10,7 @@
 #include "bionic/runtime.h"
 #include "bionic/threads.h"
 #include "bionic/wake_trace.h"
+#include "platform/windows/guest_tls.h"
 
 namespace elixir::bionic {
 namespace core {
@@ -18,12 +19,17 @@ namespace {
 constexpr std::int64_t kNanosPerSecond = 1000000000;
 constexpr std::uint64_t kUnixEpochFiletime = 116444736000000000ull;
 
+constexpr std::int64_t kTenMegahertz = 10000000;
+std::int64_t g_qpc_frequency = 0;
+
 std::int64_t QpcFrequency() noexcept {
-  static const std::int64_t frequency = [] {
+  std::int64_t frequency = __atomic_load_n(&g_qpc_frequency, __ATOMIC_RELAXED);
+  if (__builtin_expect(frequency == 0, 0)) {
     LARGE_INTEGER value;
     QueryPerformanceFrequency(&value);
-    return value.QuadPart > 0 ? value.QuadPart : 10000000;
-  }();
+    frequency = value.QuadPart > 0 ? value.QuadPart : kTenMegahertz;
+    __atomic_store_n(&g_qpc_frequency, frequency, __ATOMIC_RELAXED);
+  }
   return frequency;
 }
 
@@ -105,13 +111,17 @@ HANDLE SleepTimer() noexcept {
 
 }
 
+std::int64_t CounterToNanoseconds(std::int64_t ticks, std::int64_t frequency) noexcept {
+  if (__builtin_expect(frequency == kTenMegahertz, 1)) return ticks * 100;
+  const std::int64_t seconds = ticks / frequency;
+  const std::int64_t remainder = ticks % frequency;
+  return seconds * kNanosPerSecond + remainder * kNanosPerSecond / frequency;
+}
+
 std::int64_t MonotonicNanoseconds() noexcept {
   LARGE_INTEGER counter;
   QueryPerformanceCounter(&counter);
-  const std::int64_t frequency = QpcFrequency();
-  const std::int64_t seconds = counter.QuadPart / frequency;
-  const std::int64_t remainder = counter.QuadPart % frequency;
-  return seconds * kNanosPerSecond + remainder * kNanosPerSecond / frequency;
+  return CounterToNanoseconds(counter.QuadPart, QpcFrequency());
 }
 
 std::int64_t RealtimeNanoseconds() noexcept {
@@ -161,7 +171,7 @@ void PreciseSleep(std::int64_t nanoseconds) noexcept {
   HANDLE timer = SleepTimer();
   for (;;) {
     const std::int64_t remaining = deadline - MonotonicNanoseconds();
-    if (remaining <= 0) return;
+    if (remaining <= 0) break;
     if (remaining <= 50000 || timer == nullptr) {
       while (MonotonicNanoseconds() < deadline) {
         if (timer == nullptr && deadline - MonotonicNanoseconds() > 2000000) {
@@ -170,7 +180,7 @@ void PreciseSleep(std::int64_t nanoseconds) noexcept {
           YieldProcessor();
         }
       }
-      return;
+      break;
     }
     LARGE_INTEGER due;
     due.QuadPart = -(remaining / 100 > 0 ? remaining / 100 : 1);
@@ -180,6 +190,7 @@ void PreciseSleep(std::int64_t nanoseconds) noexcept {
     }
     WaitForSingleObject(timer, INFINITE);
   }
+  platform::ResumeGuestThread();
 }
 
 }

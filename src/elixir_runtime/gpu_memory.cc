@@ -11,7 +11,9 @@
 #include <cstring>
 #include <iterator>
 #include <utility>
+#include <vector>
 
+#include "graphics/vulkan/device_order.h"
 #include "graphics/vulkan/guest_vulkan.h"
 
 namespace elixir::runtime {
@@ -51,10 +53,21 @@ bool ProbeAdapter(PFN_vkGetInstanceProcAddr get_proc, VkInstance* instance, PFN_
   if (*destroy == nullptr || enumerate == nullptr || properties == nullptr || queue_families == nullptr ||
       can_present == nullptr) return false;
 
-  std::uint32_t count = 0;
-  if (enumerate(*instance, &count, nullptr) != VK_SUCCESS || count != 1) return false;
-  VkPhysicalDevice physical_device = VK_NULL_HANDLE;
-  if (enumerate(*instance, &count, &physical_device) != VK_SUCCESS || count != 1) return false;
+  std::array<VkPhysicalDevice, 16> devices{};
+  std::uint32_t count = static_cast<std::uint32_t>(devices.size());
+  const VkResult enumerated = enumerate(*instance, &count, devices.data());
+  if ((enumerated != VK_SUCCESS && enumerated != VK_INCOMPLETE) || count == 0) return false;
+  vulkan::DeviceQueries queries;
+  queries.properties = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties>(
+      get_proc(*instance, "vkGetPhysicalDeviceProperties"));
+  queries.queue_families = queue_families;
+  queries.can_present = can_present;
+  std::vector<vulkan::DeviceCandidate> candidates;
+  for (std::uint32_t index = 0; index < count; ++index) {
+    candidates.push_back(vulkan::DescribeDevice(devices[index], queries));
+  }
+  const VkPhysicalDevice physical_device =
+      devices[vulkan::PreferredDevice(vulkan::CachedDeviceOrderPolicy(), candidates)];
 
   VkPhysicalDeviceProperties2 device{};
   device.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;

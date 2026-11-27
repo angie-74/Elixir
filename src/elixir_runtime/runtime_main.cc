@@ -26,6 +26,7 @@
 
 #include "abi/sysv_abi.h"
 #include "bionic/raw_syscalls.h"
+#include "bionic/threads.h"
 #include "runtime/mod_paths.h"
 #include "elf/guest_image_check.h"
 #include "elf/stack_guard_rewrite.h"
@@ -498,7 +499,10 @@ int RunElixirRuntime(const std::vector<std::string>& arguments) {
     Log("main thread " + EnsureThreadStackGuarantee(64 * 1024).detail);
     timer.emplace(timer_1ms);
     Log(std::string("timer resolution: ") +
-        (timer->active() ? "1 ms while running" : timer_1ms ? "timeBeginPeriod(1) failed" : "system default"));
+        (timer->active() ? TimerResolutionText(timer->resolution_100ns()) + " while running"
+                         : timer_1ms ? "timeBeginPeriod(1) failed" : "system default"));
+    Log(std::string("timed waits: ") +
+        (bionic::threads::WordWaitsKeepTheirTimeout() ? "keep their own timeout" : "rounded up to whole milliseconds"));
     Log(std::string("MMCSS for render/audio threads: ") + (MmcssEnabled() ? "on" : "off"));
   }
 

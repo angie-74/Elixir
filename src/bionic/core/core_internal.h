@@ -51,6 +51,7 @@ std::int32_t CurrentTid() noexcept;
 
 int ReadClock(std::int32_t clock_id, guest::Timespec* out) noexcept;
 std::int64_t MonotonicNanoseconds() noexcept;
+std::int64_t CounterToNanoseconds(std::int64_t ticks, std::int64_t frequency) noexcept;
 std::int64_t RealtimeNanoseconds() noexcept;
 void PreciseSleep(std::int64_t nanoseconds) noexcept;
 inline bool ValidTimespec(const guest::Timespec& ts) noexcept {

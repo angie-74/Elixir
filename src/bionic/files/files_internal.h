@@ -18,6 +18,7 @@
 #include "bionic/files/files.h"
 #include "bionic/runtime.h"
 #include "bionic/vfs.h"
+#include "platform/windows/guest_tls.h"
 
 namespace elixir::bionic::files {
 
@@ -81,6 +82,7 @@ static_assert(offsetof(GuestStatx, stx_rdev_major) == 128, "statx rdev");
 
 template <typename R, typename F>
 R Guarded(R failure, F&& body) noexcept {
+  const platform::GuestThreadResume resume;
   try {
     return body();
   } catch (const std::bad_alloc&) {

@@ -29,13 +29,17 @@ class TimerResolutionScope {
   TimerResolutionScope& operator=(const TimerResolutionScope&) = delete;
 
   bool active() const { return active_; }
+  unsigned long resolution_100ns() const { return resolution_; }
   void Release();
 
  private:
   bool active_ = false;
+  unsigned long resolution_ = 0;
+  unsigned long finest_ = 0;
 };
 
 int ActiveTimerResolutionRequests();
+std::string TimerResolutionText(unsigned long resolution_100ns);
 
 enum class MmcssTask {
   kGames,

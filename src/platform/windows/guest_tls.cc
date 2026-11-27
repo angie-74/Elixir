@@ -302,6 +302,13 @@ void ActivateGuestThreadPointer() noexcept {
   if (t_current != nullptr) WriteFsBase(reinterpret_cast<std::uint64_t>(t_current->thread_pointer()));
 }
 
+void ResumeGuestThread() noexcept {
+  GuestThreadState* state = t_current;
+  if (state == nullptr) return;
+  WriteFsBase(reinterpret_cast<std::uint64_t>(state->thread_pointer()));
+  ArmRawSyscallsOnThisThread();
+}
+
 void SetGuestThreadExitHook(GuestThreadExitHook hook) noexcept {
   g_exit_hook.store(hook, std::memory_order_release);
 }

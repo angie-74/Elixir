@@ -6,6 +6,7 @@ set(ELIXIR_VULKAN_SRC "${CMAKE_SOURCE_DIR}/src/graphics/vulkan")
 add_library(elixir_vulkan STATIC
   "${ELIXIR_VULKAN_SRC}/generated/vk_sysv_thunks.cc"
   "${ELIXIR_VULKAN_SRC}/guest_vulkan.cc"
+  "${ELIXIR_VULKAN_SRC}/device_order.cc"
   "${ELIXIR_VULKAN_SRC}/extension_policy.cc"
   "${ELIXIR_VULKAN_SRC}/present_policy.cc"
   "${ELIXIR_VULKAN_SRC}/etc2_decoder.cc"

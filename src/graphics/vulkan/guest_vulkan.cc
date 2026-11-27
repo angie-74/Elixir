@@ -14,6 +14,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "graphics/vulkan/device_order.h"
 #include "graphics/vulkan/etc2_emulation.h"
 #include "graphics/vulkan/extension_policy.h"
 #include "graphics/vulkan/generated/vk_sysv_thunks.h"
@@ -367,6 +368,42 @@ void RecordPhysicalDeviceGroups(VkInstance instance, std::uint32_t count,
                                 const VkPhysicalDeviceGroupProperties* groups) {
   for (std::uint32_t i = 0; i < count; ++i) {
     RecordPhysicalDevices(instance, groups[i].physicalDeviceCount, groups[i].physicalDevices);
+  }
+}
+
+std::atomic<std::uint64_t> g_announced_device_order{0};
+
+void OrderPhysicalDevicesForGuest(std::vector<VkPhysicalDevice>* devices, bool announce) {
+  if (devices->size() < 2) return;
+  const DeviceOrderPolicy policy = CachedDeviceOrderPolicy();
+  DeviceQueries queries;
+  queries.properties = ELIXIR_VK_HOST(vkGetPhysicalDeviceProperties);
+  queries.queue_families = ELIXIR_VK_HOST(vkGetPhysicalDeviceQueueFamilyProperties);
+  queries.can_present = ELIXIR_VK_HOST(vkGetPhysicalDeviceWin32PresentationSupportKHR);
+  std::vector<DeviceCandidate> candidates;
+  std::vector<std::string> names(devices->size());
+  candidates.reserve(devices->size());
+  for (std::size_t index = 0; index < devices->size(); ++index) {
+    candidates.push_back(DescribeDevice((*devices)[index], queries, &names[index]));
+  }
+  const std::size_t preferred = PreferredDevice(policy, candidates);
+  if (announce) {
+    const std::uint64_t signature = (reinterpret_cast<std::uintptr_t>((*devices)[preferred]) << 8) ^
+                                    (devices->size() << 4) ^ (static_cast<std::uint64_t>(policy) + 1);
+    if (g_announced_device_order.exchange(signature, std::memory_order_relaxed) != signature) {
+      std::string listed;
+      for (std::size_t index = 0; index < devices->size(); ++index) {
+        if (!listed.empty()) listed += ", ";
+        listed += names[index] + " (" + PhysicalDeviceTypeName(candidates[index].type) +
+                  (candidates[index].can_present ? ")" : ", cannot show a window)");
+      }
+      Log("graphics cards: %s; Roblox is offered %s first (order: %s)", listed.c_str(), names[preferred].c_str(),
+          DeviceOrderPolicyName(policy));
+    }
+  }
+  if (preferred != 0) {
+    std::rotate(devices->begin(), devices->begin() + static_cast<std::ptrdiff_t>(preferred),
+                devices->begin() + static_cast<std::ptrdiff_t>(preferred) + 1);
   }
 }
 
@@ -837,12 +874,14 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkEnumeratePhysicalDevices(VkInstance i
                                                                     VkPhysicalDevice* pPhysicalDevices) {
   const auto host = ELIXIR_VK_HOST(vkEnumeratePhysicalDevices);
   if (host == nullptr) return VK_ERROR_INITIALIZATION_FAILED;
-  const VkResult result = host(instance, pPhysicalDeviceCount, pPhysicalDevices);
-  if (pPhysicalDevices != nullptr && pPhysicalDeviceCount != nullptr &&
-      (result == VK_SUCCESS || result == VK_INCOMPLETE)) {
-    vk::RecordPhysicalDevices(instance, *pPhysicalDeviceCount, pPhysicalDevices);
-  }
-  return result;
+  if (pPhysicalDeviceCount == nullptr) return host(instance, pPhysicalDeviceCount, pPhysicalDevices);
+  std::vector<VkPhysicalDevice> devices;
+  const VkResult result = EnumerateAll<VkPhysicalDevice>(
+      [&](uint32_t* count, VkPhysicalDevice* out) { return host(instance, count, out); }, &devices);
+  if (result != VK_SUCCESS) return result;
+  vk::RecordPhysicalDevices(instance, static_cast<std::uint32_t>(devices.size()), devices.data());
+  vk::OrderPhysicalDevicesForGuest(&devices, pPhysicalDevices != nullptr);
+  return CopyEnumeration(devices, pPhysicalDeviceCount, pPhysicalDevices);
 }
 
 ELIXIR_SYSV VkResult elixir_vk_intercept_vkEnumeratePhysicalDeviceGroups(
@@ -1212,6 +1251,7 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkAcquireNextImageKHR(VkDevice device, 
                                                                VkFence fence, uint32_t* pImageIndex) {
   const auto acquire = ELIXIR_VK_HOST(vkAcquireNextImageKHR);
   if (acquire == nullptr) return VK_ERROR_INITIALIZATION_FAILED;
+  const elixir::platform::GuestThreadResume resume;
   return vk::NormalizeAndroidSwapchainResult(
       acquire(device, swapchain, timeout, semaphore, fence, pImageIndex));
 }
@@ -1221,6 +1261,7 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkAcquireNextImage2KHR(VkDevice device,
                                                                 uint32_t* pImageIndex) {
   const auto acquire = ELIXIR_VK_HOST(vkAcquireNextImage2KHR);
   if (acquire == nullptr) return VK_ERROR_INITIALIZATION_FAILED;
+  const elixir::platform::GuestThreadResume resume;
   return vk::NormalizeAndroidSwapchainResult(acquire(device, pAcquireInfo, pImageIndex));
 }
 
@@ -1228,6 +1269,7 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkQueuePresentKHR(VkQueue queue,
                                                            const VkPresentInfoKHR* pPresentInfo) {
   const auto present = ELIXIR_VK_HOST(vkQueuePresentKHR);
   if (present == nullptr) return VK_ERROR_INITIALIZATION_FAILED;
+  const elixir::platform::GuestThreadResume resume;
   const VkResult result = present(queue, pPresentInfo);
   const elixir::vulkan::PresentHook hook = g_present_hook.load(std::memory_order_acquire);
   if (pPresentInfo != nullptr && pPresentInfo->pResults != nullptr) {
@@ -1613,18 +1655,21 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkResetCommandBuffer(VkCommandBuffer co
 ELIXIR_SYSV VkResult elixir_vk_intercept_vkQueueSubmit(VkQueue queue, uint32_t submitCount,
                                                        const VkSubmitInfo* pSubmits, VkFence fence) {
   vk::PrepareEtc2Submit(submitCount, pSubmits);
+  const elixir::platform::GuestThreadResume resume;
   return ELIXIR_VK_HOST(vkQueueSubmit)(queue, submitCount, pSubmits, fence);
 }
 
 ELIXIR_SYSV VkResult elixir_vk_intercept_vkQueueSubmit2(VkQueue queue, uint32_t submitCount,
                                                         const VkSubmitInfo2* pSubmits, VkFence fence) {
   vk::PrepareEtc2Submit2(submitCount, pSubmits);
+  const elixir::platform::GuestThreadResume resume;
   return ELIXIR_VK_HOST(vkQueueSubmit2)(queue, submitCount, pSubmits, fence);
 }
 
 ELIXIR_SYSV VkResult elixir_vk_intercept_vkQueueSubmit2KHR(VkQueue queue, uint32_t submitCount,
                                                            const VkSubmitInfo2* pSubmits, VkFence fence) {
   vk::PrepareEtc2Submit2(submitCount, pSubmits);
+  const elixir::platform::GuestThreadResume resume;
   return ELIXIR_VK_HOST(vkQueueSubmit2KHR)(queue, submitCount, pSubmits, fence);
 }
 

@@ -6,6 +6,7 @@
 #include "bionic/net.h"
 #include "bionic/runtime.h"
 #include "bionic/vfs.h"
+#include "platform/windows/guest_tls.h"
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -140,6 +141,7 @@ static_assert(sizeof(GuestFdSet) == layout::kFdSet__size, "fd_set");
 
 template <typename R, typename F>
 R Guarded(R failure, F&& body) noexcept {
+  const platform::GuestThreadResume resume;
   try {
     return body();
   } catch (const std::bad_alloc&) {

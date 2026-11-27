@@ -308,6 +308,8 @@ struct FutexCounters {
   std::atomic<std::uint64_t> masked_wakes{0};
   std::atomic<std::uint64_t> requeues{0};
   std::atomic<std::uint64_t> wake_ops{0};
+  std::atomic<std::uint64_t> timeouts{0};
+  std::atomic<std::uint64_t> late_ns{0};
 };
 FutexCounters g_futex;
 
@@ -336,21 +338,20 @@ abi::g_long Futex(volatile std::int32_t* word, int op, std::int32_t value, abi::
         }
       }
       if (*word != value) return ErrnoResult(guest::kEAGAIN);
-      DWORD wait_ms = INFINITE;
-      if (remaining_ns >= 0) {
-        const std::int64_t ms = (remaining_ns + 999999) / 1000000;
-        wait_ms = ms >= 0x7fffffff ? 0x7fffffff : static_cast<DWORD>(ms);
-      }
       g_futex.waits.fetch_add(1, std::memory_order_relaxed);
       if (timeout != nullptr) g_futex.timed_waits.fetch_add(1, std::memory_order_relaxed);
       if (command == kWaitBitset && static_cast<std::uint32_t>(value3) != kMatchAny) {
         g_futex.masked_waits.fetch_add(1, std::memory_order_relaxed);
       }
       const std::int64_t started = MonotonicNanoseconds();
-      std::int32_t expected = value;
-      const bool woken = WaitOnAddress(const_cast<std::int32_t*>(word), &expected, sizeof(expected), wait_ms) != FALSE;
-      const bool timed_out = !woken && GetLastError() == ERROR_TIMEOUT;
+      const bool timed_out = threads::WaitOnWord(word, value, remaining_ns) == threads::WordWait::kTimedOut;
       const std::int64_t waited = MonotonicNanoseconds() - started;
+      if (timed_out) {
+        g_futex.timeouts.fetch_add(1, std::memory_order_relaxed);
+        if (waited > remaining_ns) {
+          g_futex.late_ns.fetch_add(static_cast<std::uint64_t>(waited - remaining_ns), std::memory_order_relaxed);
+        }
+      }
       if (waited >= 30000000) {
         g_futex.long_waits.fetch_add(1, std::memory_order_relaxed);
         if (timed_out) g_futex.long_timeouts.fetch_add(1, std::memory_order_relaxed);
@@ -488,6 +489,15 @@ std::string FutexStatisticsReport() {
                        take(f.long_timeouts) + " of them until their timeout), " + take(f.wakes) + " wakes (" +
                        take(f.masked_wakes) + " with a bitset), " + take(f.requeues) + " requeues, " +
                        take(f.wake_ops) + " wake-ops";
+  const std::uint64_t timeouts = f.timeouts.exchange(0, std::memory_order_relaxed);
+  const std::uint64_t late_ns = f.late_ns.exchange(0, std::memory_order_relaxed);
+  if (timeouts != 0) {
+    const std::uint64_t hundredths = late_ns / timeouts / 10000;
+    const std::string fraction = std::to_string(hundredths % 100);
+    report += "; " + std::to_string(timeouts) + " timed waits ran to their timeout, " +
+              std::to_string(hundredths / 100) + "." + (fraction.size() < 2 ? "0" : "") + fraction +
+              " ms late on average";
+  }
   return report;
 }
 
