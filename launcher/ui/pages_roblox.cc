@@ -700,27 +700,7 @@ float App::BuildIntegrations(Ui& ui, float x, float y, float width) {
                 L"Let games set your activity", game)) {
     SaveConfig();
   }
-  y = EndOptions(cy) + 24.0f;
-
-  y = SectionTitle(ui, x, y, width, L"Roblox links");
-  if (!link_status_loaded_) RefreshLinkStatus();
-  bool links = link_status_.all_elixir();
-  std::wstring description = L"Play buttons on the Roblox website open the game here.";
-  if (!link_blocker_.empty()) {
-    description = link_blocker_;
-  } else if (links && link_status_.overridden_by_user_choice) {
-    description = L"Windows opens these links with another app. Choose Elixir in Settings > Apps > Default apps.";
-  } else if (!links && (link_status_.roblox_player == LinkHandler::kOther || link_status_.roblox == LinkHandler::kOther)) {
-    description = L"Another app opens Roblox links now. Turn this on to open them here.";
-  }
-  BeginOptions();
-  cy = y;
-  cy = SettingRow(ui, cx, cy, cw, L"Open Roblox links in Elixir", description, 96.0f, 32.0f, &control, true);
-  if (ui.Toggle(L"integrations.links", control, &links, L"Open Roblox links in Elixir", link_blocker_.empty())) {
-    Defer([this, links] { SetOpenRobloxLinks(links); });
-  }
   y = EndOptions(cy);
-  if (!link_message_.empty()) y = Banner(ui, x, y + 16.0f, width, 2, L"Couldn’t change Roblox links", link_message_);
   return y;
 }
 

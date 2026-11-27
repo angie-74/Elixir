@@ -78,6 +78,11 @@ bool SendRuntimeJoin(HANDLE pipe, const std::string& request);
 
 std::wstring RuntimeExitMeaning(DWORD code);
 
+inline constexpr DWORD kRuntimeRestartExitCode = 20;
+inline constexpr ULONGLONG kRuntimeRestartMinGapMs = 10000;
+
+bool ShouldRestartRuntime(DWORD exit_code, bool stopped_by_launcher, ULONGLONG now_ms, ULONGLONG last_restart_ms);
+
 bool IsAnyRuntimeProcessRunning();
 
 }

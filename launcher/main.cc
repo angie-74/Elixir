@@ -379,6 +379,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int show_command) {
       }
       options.paths = LauncherPathsForDataRoot(options.paths.exe_dir, location, false);
       options.installed = true;
+      if (code < 0) EnsureInstalledLinks(location, environment);
     }
     if (code >= 0) {
       if (argv != nullptr) LocalFree(argv);

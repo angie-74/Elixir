@@ -2038,7 +2038,15 @@ void App::OnRuntimeExited(DWORD exit_code) {
   RefreshCrashLogs();
   if (page_ == Page::kGlobalSettings) RefreshGlobalSettings();
   if (page_ == Page::kSettings) MeasureCaches();
-  if (exit_code != 0 && !stopped) {
+  if (ShouldRestartRuntime(exit_code, stopped, GetTickCount64(), last_runtime_restart_)) {
+    last_runtime_restart_ = GetTickCount64();
+    LaunchRuntimeNow();
+    if (runtime_.running) {
+      Invalidate();
+      return;
+    }
+  }
+  if (exit_code != 0 && exit_code != kRuntimeRestartExitCode && !stopped) {
     Overlay overlay;
     overlay.id = L"play.ended";
     overlay.status = 2;

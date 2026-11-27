@@ -410,7 +410,8 @@ void GameSession::NoteFirstFrame() {
   EmitEvent(1, "first-frame", detail);
 }
 
-GameSessionEnd GameSession::Run(const std::atomic<bool>& stop, std::uint64_t time_limit_ms) {
+GameSessionEnd GameSession::Run(const std::atomic<bool>& stop, std::uint64_t time_limit_ms,
+                                const std::atomic<bool>* restart) {
   const ULONGLONG start = GetTickCount64();
   const std::int64_t start_us = NowMicroseconds();
   static_cast<void>(PacingReport(start_us));
@@ -423,6 +424,10 @@ GameSessionEnd GameSession::Run(const std::atomic<bool>& stop, std::uint64_t tim
   for (;;) {
     if (stop.load()) {
       end = GameSessionEnd::kStopped;
+      break;
+    }
+    if (restart != nullptr && restart->load()) {
+      end = GameSessionEnd::kRestart;
       break;
     }
     if (!window_->Pump()) {

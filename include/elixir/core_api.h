@@ -15,6 +15,7 @@ extern "C" {
 
 #define ELIXIR_EXIT_CORE_MISSING 11u
 #define ELIXIR_EXIT_CORE_ABI 12u
+#define ELIXIR_EXIT_RESTART 20u
 
 typedef enum ElixirCoreEventKind {
   ELIXIR_CORE_EVENT_STAGE = 1,

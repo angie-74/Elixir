@@ -47,7 +47,7 @@ struct GameSessionGeometry {
 
 bool ApplyFrameRateCap(unsigned cap, float* current_hz, std::vector<float>* supported_hz);
 
-enum class GameSessionEnd { kClosed, kStopped, kTimeLimit, kFailed };
+enum class GameSessionEnd { kClosed, kStopped, kTimeLimit, kFailed, kRestart };
 
 class GameSession {
  public:
@@ -72,7 +72,8 @@ class GameSession {
   void SetFrameRateCap(unsigned cap) { frame_rate_cap_ = cap; }
   void FollowDisplayRefresh(void* roblox, jnivm::VM* vm);
 
-  GameSessionEnd Run(const std::atomic<bool>& stop, std::uint64_t time_limit_ms);
+  GameSessionEnd Run(const std::atomic<bool>& stop, std::uint64_t time_limit_ms,
+                     const std::atomic<bool>* restart = nullptr);
 
   bool presented() const;
   std::uint64_t frames() const;

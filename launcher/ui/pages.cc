@@ -355,7 +355,6 @@ constexpr SearchEntry kSearchIndex[] = {
     {Page::kGlobalSettings, L"Mouse sensitivity", L"global settings input camera speed", L"global.sensitivity"},
     {Page::kIntegrations, L"Discord Rich Presence", L"discord rich presence activity join button",
      L"integrations.discord"},
-    {Page::kIntegrations, L"Roblox links", L"links link browser website open join protocol", L"integrations.links"},
     {Page::kSettings, L"Resolution scale", L"resolution scale render sharpness graphics quality", L"settings.scale"},
     {Page::kSettings, L"Audio output device", L"audio sound speakers headphones output device",
      L"settings.audio.default"},

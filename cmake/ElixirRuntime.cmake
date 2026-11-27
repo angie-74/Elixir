@@ -60,6 +60,7 @@ add_library(elixir_runtime_core STATIC
   src/elixir_runtime/network_trace.cc
   src/elixir_runtime/payload.cc
   src/elixir_runtime/process_tuning.cc
+  src/elixir_runtime/relaunch.cc
   src/elixir_runtime/runtime_flags.cc
   src/elixir_runtime/runtime_main.cc
   src/elixir_runtime/text.cc
@@ -76,6 +77,7 @@ if(TARGET elixir_vulkan)
 endif()
 if(TARGET elixir_jnivm)
   target_sources(elixir_runtime_core PRIVATE
+    src/elixir_runtime/app_restart.cc
     src/elixir_runtime/roblox_startup.cc
     src/elixir_runtime/sign_in_identity.cc
     src/elixir_runtime/roblox_session_store.cc)
@@ -152,6 +154,7 @@ elixir_gtest(elixir_runtime_test
   "${ELIXIR_RUNTIME_TESTS}/network_trace_test.cc"
   "${ELIXIR_RUNTIME_TESTS}/policy_flags_test.cc"
   "${ELIXIR_RUNTIME_TESTS}/process_tuning_test.cc"
+  "${ELIXIR_RUNTIME_TESTS}/relaunch_test.cc"
   "${ELIXIR_RUNTIME_TESTS}/session_log_test.cc"
   "${ELIXIR_RUNTIME_TESTS}/guest_runtime_test.cc"
   "${ELIXIR_RUNTIME_TESTS}/core_host_test.cc")
@@ -166,6 +169,7 @@ target_compile_definitions(elixir_runtime_test PRIVATE
 if(TARGET elixir_jnivm)
   elixir_gtest(elixir_runtime_identity_test
     tests/auth_service_test.cc
+    "${ELIXIR_RUNTIME_TESTS}/app_restart_test.cc"
     "${ELIXIR_RUNTIME_TESTS}/sign_in_identity_test.cc")
   target_link_libraries(elixir_runtime_identity_test PRIVATE elixir_runtime_core)
 endif()

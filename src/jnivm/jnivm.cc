@@ -1560,11 +1560,20 @@ void HandleVoidMethod(jobject obj, jmethodID method_id, JniVaArgs& args) {
   if (std::strcmp(name, "gameActivity_onDidSwitchAccountReceived") == 0) {
     SyncRobloxCookiesFromEngine(CurrentVM());
     RecordNativeHelperCallback(obj, name);
+    if (VM* vm = CurrentVM()) {
+      vm->DispatchRobloxAppRestart(RobloxAppRestartReason::kAccountSwitched);
+    }
+    return;
+  }
+  if (std::strcmp(name, "gameActivity_onRestartLuaApp") == 0) {
+    RecordNativeHelperCallback(obj, name);
+    if (VM* vm = CurrentVM()) {
+      vm->DispatchRobloxAppRestart(RobloxAppRestartReason::kRequestedByRoblox);
+    }
     return;
   }
   if (std::strcmp(name, "gameActivity_onLuaAppDidReturn") == 0 ||
       std::strcmp(name, "gameActivity_onLuaTextBoxPropertyChanged") == 0 ||
-      std::strcmp(name, "gameActivity_onRestartLuaApp") == 0 ||
       std::strcmp(name, "gameActivity_onScanQrCode") == 0 ||
       std::strcmp(name, "gameActivity_hideKeyboard") == 0) {
     RecordNativeHelperCallback(obj, name);
@@ -3849,6 +3858,16 @@ void HandleVoidMethodA(jobject obj, jmethodID method_id, const jvalue *args) {
   if (std::strcmp(name, "gameActivity_onDidSwitchAccountReceived") == 0) {
     SyncRobloxCookiesFromEngine(CurrentVM());
     RecordNativeHelperCallback(obj, name);
+    if (VM* vm = CurrentVM()) {
+      vm->DispatchRobloxAppRestart(RobloxAppRestartReason::kAccountSwitched);
+    }
+    return;
+  }
+  if (std::strcmp(name, "gameActivity_onRestartLuaApp") == 0) {
+    RecordNativeHelperCallback(obj, name);
+    if (VM* vm = CurrentVM()) {
+      vm->DispatchRobloxAppRestart(RobloxAppRestartReason::kRequestedByRoblox);
+    }
     return;
   }
   if (std::strncmp(name, "gameActivity_", 13) == 0) {
@@ -4658,6 +4677,7 @@ VM::~VM() {
   ClearRobloxDataModelNotificationCallbacks();
   ClearRobloxExperienceLifecycleCallbacks();
   ClearRobloxCredentialSink();
+  ClearRobloxAppRestartSink();
   ClearRobloxCredentialProvider();
   ClearRobloxTextInputCallbacks();
   ClearAndroidWindowCallbacks();
@@ -5984,6 +6004,34 @@ bool VM::DispatchRobloxCredential(const char* data, std::size_t size) {
   }
   ClearCookieString(&accepted);
   return true;
+}
+
+void VM::SetRobloxAppRestartSink(
+    std::shared_ptr<void> context,
+    const RobloxAppRestartCallbacks& callbacks) {
+  std::lock_guard<std::mutex> lock(roblox_app_restart_mutex_);
+  roblox_app_restart_binding_.context = std::move(context);
+  roblox_app_restart_binding_.callbacks = callbacks;
+}
+
+void VM::ClearRobloxAppRestartSink() {
+  RobloxAppRestartBinding old_binding;
+  {
+    std::lock_guard<std::mutex> lock(roblox_app_restart_mutex_);
+    old_binding = std::move(roblox_app_restart_binding_);
+    roblox_app_restart_binding_ = {};
+  }
+}
+
+void VM::DispatchRobloxAppRestart(RobloxAppRestartReason reason) {
+  RobloxAppRestartBinding binding;
+  {
+    std::lock_guard<std::mutex> lock(roblox_app_restart_mutex_);
+    binding = roblox_app_restart_binding_;
+  }
+  if (binding.context != nullptr && binding.callbacks.restart != nullptr) {
+    binding.callbacks.restart(binding.context.get(), reason);
+  }
 }
 
 void VM::DispatchRobloxSignOut() {

@@ -16,7 +16,12 @@ struct LinkRegistry {
   std::wstring classes = L"Software\\Classes";
   std::wstring player_uninstall = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\roblox-player";
   std::wstring user_choice = L"Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations";
+  std::wstring capabilities = L"Software\\Elixir\\Capabilities";
+  std::wstring registered_applications = L"Software\\RegisteredApplications";
 };
+
+inline constexpr wchar_t kLinkProgId[] = L"Elixir.RobloxLink";
+inline constexpr wchar_t kRegisteredApplicationName[] = L"Elixir";
 
 inline constexpr const wchar_t* kLinkSchemes[] = {L"roblox-player", L"roblox"};
 
@@ -31,7 +36,10 @@ struct LinkStatus {
   LinkHandler roblox = LinkHandler::kNone;
   bool overridden_by_user_choice = false;
 
+  bool listed_as_default_app = false;
+
   bool all_elixir() const { return roblox_player == LinkHandler::kElixir && roblox == LinkHandler::kElixir; }
+  bool complete() const { return all_elixir() && listed_as_default_app; }
 };
 
 std::wstring LinkCommand(const std::wstring& exe);
@@ -45,6 +53,11 @@ bool RegisterLinkHandlers(const LinkRegistry& registry, const std::wstring& exe,
 
 bool UnregisterLinkHandlers(const LinkRegistry& registry, const std::wstring& exe, const std::wstring& backup_file,
                             std::wstring* error);
+
+std::wstring LinkBackupFile(const std::wstring& data_root);
+
+bool EnsureLinkHandlers(const LinkRegistry& registry, const std::wstring& exe, const std::wstring& backup_file,
+                        std::wstring* error);
 
 }
 

@@ -219,6 +219,115 @@ LinkHandler HandlerFor(const LinkRegistry& registry, const wchar_t* scheme, cons
   return SameText(command, LinkCommand(exe)) ? LinkHandler::kElixir : LinkHandler::kOther;
 }
 
+std::wstring ProgIdPath(const LinkRegistry& registry) { return registry.classes + L"\\" + kLinkProgId; }
+
+bool WriteDefaultAppListing(const LinkRegistry& registry, const std::wstring& icon, const std::wstring& command) {
+  const std::wstring prog_id = ProgIdPath(registry);
+  bool ok = SetString(registry.root, prog_id, nullptr, L"Roblox link") &&
+            SetString(registry.root, prog_id, L"URL Protocol", L"") &&
+            SetString(registry.root, prog_id + L"\\DefaultIcon", nullptr, icon) &&
+            SetString(registry.root, prog_id + L"\\shell\\open\\command", nullptr, command) &&
+            SetString(registry.root, registry.capabilities, L"ApplicationName", kRegisteredApplicationName) &&
+            SetString(registry.root, registry.capabilities, L"ApplicationDescription",
+                      L"Runs the Android version of Roblox on Windows.") &&
+            SetString(registry.root, registry.capabilities, L"ApplicationIcon", icon);
+  for (const wchar_t* scheme : kLinkSchemes) {
+    ok = ok && SetString(registry.root, registry.capabilities + L"\\URLAssociations", scheme, kLinkProgId);
+  }
+  return ok && SetString(registry.root, registry.registered_applications, kRegisteredApplicationName,
+                         registry.capabilities);
+}
+
+bool DefaultAppListingCurrent(const LinkRegistry& registry, const std::wstring& exe) {
+  if (!SameText(ReadDefaultString(registry.root, ProgIdPath(registry) + L"\\shell\\open\\command"),
+                LinkCommand(exe))) {
+    return false;
+  }
+  if (!SameText(ReadDefaultString(registry.root, registry.registered_applications, kRegisteredApplicationName),
+                registry.capabilities)) {
+    return false;
+  }
+  for (const wchar_t* scheme : kLinkSchemes) {
+    if (!SameText(ReadDefaultString(registry.root, registry.capabilities + L"\\URLAssociations", scheme),
+                  kLinkProgId)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void RemoveDefaultAppListing(const LinkRegistry& registry, const std::wstring& exe) {
+  const std::wstring command =
+      ReadDefaultString(registry.root, ProgIdPath(registry) + L"\\shell\\open\\command");
+  if (!command.empty() && !SameText(command, LinkCommand(exe))) return;
+  RegDeleteTreeW(registry.root, ProgIdPath(registry).c_str());
+  RegDeleteKeyW(registry.root, ProgIdPath(registry).c_str());
+  if (SameText(ReadDefaultString(registry.root, registry.registered_applications, kRegisteredApplicationName),
+               registry.capabilities)) {
+    Key applications;
+    if (RegOpenKeyExW(registry.root, registry.registered_applications.c_str(), 0, KEY_SET_VALUE,
+                      applications.out()) == ERROR_SUCCESS) {
+      RegDeleteValueW(applications.get(), kRegisteredApplicationName);
+    }
+  }
+  RegDeleteTreeW(registry.root, registry.capabilities.c_str());
+  RegDeleteKeyW(registry.root, registry.capabilities.c_str());
+  const std::wstring parent = ParentDirectory(registry.capabilities);
+  if (!parent.empty() && !SameText(parent, L"Software")) RegDeleteKeyW(registry.root, parent.c_str());
+}
+
+const Json* FindMember(const Json* object, std::string_view name) {
+  if (object == nullptr || !object->is_object()) return nullptr;
+  for (const Json::Member& member : object->members()) {
+    if (member.first.size() != name.size()) continue;
+    bool same = true;
+    for (std::size_t i = 0; i < name.size() && same; ++i) {
+      const auto lower = [](char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c; };
+      same = lower(member.first[i]) == lower(name[i]);
+    }
+    if (same) return &member.second;
+  }
+  return nullptr;
+}
+
+std::wstring SnapshotCommand(const Json& snapshot) {
+  const Json* key = &snapshot;
+  for (const char* name : {"shell", "open", "command"}) {
+    key = FindMember(key->Find("keys"), name);
+    if (key == nullptr) return {};
+  }
+  const Json* values = key->Find("values");
+  if (values == nullptr || !values->is_array()) return {};
+  for (const Json& value : values->items()) {
+    if (!value.GetString("name").empty()) continue;
+    std::vector<BYTE> data;
+    if (!Unhex(value.GetString("data"), &data) || data.size() < sizeof(wchar_t)) return {};
+    std::wstring text(reinterpret_cast<const wchar_t*>(data.data()), data.size() / sizeof(wchar_t));
+    while (!text.empty() && text.back() == L'\0') text.pop_back();
+    return text;
+  }
+  return {};
+}
+
+std::wstring CommandProgram(const std::wstring& command) {
+  const std::wstring trimmed = TrimWide(command);
+  if (trimmed.empty()) return {};
+  if (trimmed.front() == L'"') {
+    const std::size_t end = trimmed.find(L'"', 1);
+    return end == std::wstring::npos ? std::wstring() : trimmed.substr(1, end - 1);
+  }
+  const std::size_t space = trimmed.find(L' ');
+  return space == std::wstring::npos ? trimmed : trimmed.substr(0, space);
+}
+
+bool SnapshotStillUsable(const Json& snapshot) {
+  const std::wstring command = SnapshotCommand(snapshot);
+  if (command.empty()) return true;
+  const std::wstring program = CommandProgram(command);
+  const bool absolute = program.size() > 3 && program[1] == L':' && (program[2] == L'\\' || program[2] == L'/');
+  return !absolute || PathIsFile(program);
+}
+
 Json LoadBackup(const std::wstring& backup_file) {
   std::string bytes;
   std::wstring ignored;
@@ -247,8 +356,11 @@ LinkStatus QueryLinkHandlers(const LinkRegistry& registry, const std::wstring& e
   for (const wchar_t* scheme : kLinkSchemes) {
     const std::wstring prog_id =
         ReadDefaultString(registry.root, registry.user_choice + L"\\" + scheme + L"\\UserChoice", L"ProgId");
-    if (!prog_id.empty() && !SameText(prog_id, scheme)) status.overridden_by_user_choice = true;
+    if (!prog_id.empty() && !SameText(prog_id, scheme) && !SameText(prog_id, kLinkProgId)) {
+      status.overridden_by_user_choice = true;
+    }
   }
+  status.listed_as_default_app = DefaultAppListingCurrent(registry, exe);
   return status;
 }
 
@@ -276,10 +388,9 @@ bool RegisterLinkHandlers(const LinkRegistry& registry, const std::wstring& exe,
   Json backup = LoadBackup(backup_file);
   Json schemes = backup.Find("schemes") != nullptr && backup.Find("schemes")->is_object() ? *backup.Find("schemes")
                                                                                          : Json::MakeObject();
-  bool changed = false;
+  const std::string before = backup.Dump();
   for (const wchar_t* scheme : kLinkSchemes) {
     const std::string name = WideToUtf8(scheme);
-    if (schemes.Find(name) != nullptr) continue;
     Json entry = Json::MakeObject();
     Key key;
     const LSTATUS opened = RegOpenKeyExW(registry.root, SchemePath(registry, scheme).c_str(), 0, KEY_READ, key.out());
@@ -289,6 +400,7 @@ bool RegisterLinkHandlers(const LinkRegistry& registry, const std::wstring& exe,
       message = L"The current Roblox link settings couldn’t be read, so nothing was changed.";
       return false;
     } else if (HandlerFor(registry, scheme, exe) == LinkHandler::kElixir) {
+      if (schemes.Find(name) != nullptr) continue;
       entry.Set("unknown", true);
     } else {
       Json snapshot;
@@ -296,9 +408,9 @@ bool RegisterLinkHandlers(const LinkRegistry& registry, const std::wstring& exe,
       entry.Set("key", std::move(snapshot));
     }
     schemes.Set(name, std::move(entry));
-    changed = true;
   }
   backup.Set("schemes", std::move(schemes));
+  const bool changed = backup.Dump() != before || !PathIsFile(backup_file);
   if (changed) {
     std::wstring write_error;
     if (!EnsureDirectory(ParentDirectory(backup_file), &write_error) ||
@@ -316,6 +428,10 @@ bool RegisterLinkHandlers(const LinkRegistry& registry, const std::wstring& exe,
       return false;
     }
   }
+  if (!WriteDefaultAppListing(registry, icon, command)) {
+    message = L"Windows didn’t accept the change.";
+    return false;
+  }
   Notify();
   return true;
 }
@@ -332,7 +448,7 @@ bool UnregisterLinkHandlers(const LinkRegistry& registry, const std::wstring& ex
     DeleteScheme(registry, scheme);
     const Json* entry = schemes != nullptr && schemes->is_object() ? schemes->Find(WideToUtf8(scheme)) : nullptr;
     if (entry != nullptr && entry->GetBool("absent", false)) continue;
-    if (entry != nullptr && entry->Find("key") != nullptr) {
+    if (entry != nullptr && entry->Find("key") != nullptr && SnapshotStillUsable(*entry->Find("key"))) {
       if (!RestoreKey(registry.root, SchemePath(registry, scheme), *entry->Find("key"), 0, &message)) ok = false;
       continue;
     }
@@ -342,10 +458,21 @@ bool UnregisterLinkHandlers(const LinkRegistry& registry, const std::wstring& ex
       if (!WriteScheme(registry, scheme, L"\"" + player + L"\",0", L"\"" + player + L"\" %1")) ok = false;
     }
   }
+  RemoveDefaultAppListing(registry, exe);
   if (ok) DeleteFileW(backup_file.c_str());
   Notify();
   if (!ok && message.empty()) message = L"Windows didn’t accept the change.";
   return ok;
+}
+
+std::wstring LinkBackupFile(const std::wstring& data_root) {
+  return JoinPath(JoinPath(data_root, L"links"), L"previous-handlers.json");
+}
+
+bool EnsureLinkHandlers(const LinkRegistry& registry, const std::wstring& exe, const std::wstring& backup_file,
+                        std::wstring* error) {
+  if (QueryLinkHandlers(registry, exe).complete()) return true;
+  return RegisterLinkHandlers(registry, exe, backup_file, error);
 }
 
 }

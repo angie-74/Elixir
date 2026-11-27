@@ -17,6 +17,7 @@ struct ShortcutSpec {
   std::wstring arguments;
   std::wstring description;
   std::wstring icon;
+  std::wstring app_id;
 };
 
 struct ShortcutInfo {
@@ -24,6 +25,7 @@ struct ShortcutInfo {
   std::wstring arguments;
   std::wstring description;
   std::wstring icon;
+  std::wstring app_id;
 };
 
 std::wstring DesktopDirectory();

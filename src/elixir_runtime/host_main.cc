@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cwchar>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -15,6 +16,7 @@
 
 #include "elixir/core_api.h"
 #include "elixir_runtime/host_main.h"
+#include "elixir_runtime/relaunch.h"
 #include "platform/windows/app_user_model_id.h"
 
 #ifndef ELIXIR_VERSION
@@ -90,6 +92,13 @@ class LauncherPipe {
   LauncherPipe& operator=(const LauncherPipe&) = delete;
 
   bool connected() const { return pipe_ != nullptr; }
+
+  bool alive() {
+    std::lock_guard<std::mutex> lock(write_mutex_);
+    if (pipe_ == nullptr || broken_) return false;
+    DWORD available = 0;
+    return PeekNamedPipe(pipe_, nullptr, 0, nullptr, &available, nullptr) != FALSE;
+  }
 
   void Send(const std::string& json) {
     std::lock_guard<std::mutex> lock(write_mutex_);
@@ -263,14 +272,21 @@ int ElixirRuntimeHostMain(int argc, wchar_t** argv) {
   SetCurrentProcessExplicitAppUserModelID(elixir::kAppUserModelId);
 
   std::wstring pipe_name;
+  unsigned long after_pid = 0;
   std::vector<std::string> arguments;
   for (int i = 1; i < argc; ++i) {
-    if (std::wstring(argv[i]) == L"--ipc-pipe" && i + 1 < argc) {
+    const std::wstring_view argument = argv[i];
+    if (argument == elixir::runtime::kIpcPipeFlag && i + 1 < argc) {
       pipe_name = argv[++i];
+      continue;
+    }
+    if (argument == elixir::runtime::kAfterPidFlag && i + 1 < argc) {
+      after_pid = wcstoul(argv[++i], nullptr, 10);
       continue;
     }
     arguments.push_back(ToUtf8(argv[i]));
   }
+  elixir::runtime::WaitForProcessToExit(after_pid, elixir::runtime::kAfterPidWaitMs);
   LauncherPipe launcher(pipe_name);
   launcher.Send("{\"event\":\"host\",\"pid\":" + std::to_string(GetCurrentProcessId()) + ",\"version\":" +
                 JsonString(ELIXIR_VERSION) + ",\"abi\":" + std::to_string(ELIXIR_CORE_ABI_VERSION) + "}");
@@ -293,5 +309,11 @@ int ElixirRuntimeHostMain(int argc, wchar_t** argv) {
     code = g_api->run(static_cast<int>(argv8.size()), argv8.data());
   }
   g_api->shutdown();
+  if (code == static_cast<int>(ELIXIR_EXIT_RESTART) && !launcher.alive()) {
+    std::wstring error;
+    if (!elixir::runtime::RelaunchThisProcess(&error)) {
+      WriteStderr("Roblox could not be started again: " + ToUtf8(error.c_str()));
+    }
+  }
   return Finish(launcher, code);
 }

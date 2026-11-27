@@ -84,6 +84,15 @@ struct RobloxCredentialSinkCallbacks {
   void (*signed_out)(void *context) = nullptr;
 };
 
+enum class RobloxAppRestartReason {
+  kAccountSwitched,
+  kRequestedByRoblox,
+};
+
+struct RobloxAppRestartCallbacks {
+  void (*restart)(void *context, RobloxAppRestartReason reason) = nullptr;
+};
+
 struct FmodAudioDeviceCallbacks {
   bool (*init)(void *context, const void *identity, int channels,
                int sample_rate_hz, int block_size_frames,
@@ -305,6 +314,11 @@ public:
   bool DispatchRobloxCredential(const char *data, std::size_t size);
   void DispatchRobloxSignOut();
 
+  void SetRobloxAppRestartSink(std::shared_ptr<void> context,
+                               const RobloxAppRestartCallbacks &callbacks);
+  void ClearRobloxAppRestartSink();
+  void DispatchRobloxAppRestart(RobloxAppRestartReason reason);
+
   void SetFmodAudioDeviceCallbacks(std::shared_ptr<void> context,
                                    const FmodAudioDeviceCallbacks &callbacks);
   void ClearFmodAudioDeviceCallbacks();
@@ -455,6 +469,13 @@ private:
   };
   mutable std::mutex roblox_credential_sink_mutex_;
   RobloxCredentialSinkBinding roblox_credential_sink_binding_;
+
+  struct RobloxAppRestartBinding {
+    std::shared_ptr<void> context;
+    RobloxAppRestartCallbacks callbacks;
+  };
+  mutable std::mutex roblox_app_restart_mutex_;
+  RobloxAppRestartBinding roblox_app_restart_binding_;
 
   struct FmodAudioDeviceBinding {
     std::shared_ptr<void> context;

@@ -246,6 +246,7 @@ class App final : public AccessibilityHost {
     ULONGLONG received = 0;
   };
   static constexpr ULONGLONG kPendingJoinMaxAgeMs = 5 * 60 * 1000;
+  ULONGLONG last_runtime_restart_ = 0;
   struct ListMotion {
     struct Row {
       std::wstring key;
@@ -531,9 +532,6 @@ class App final : public AccessibilityHost {
   void UpdateGameShortcutsNow(bool force);
   void LoadNotices();
 
-  std::wstring LinkBackupPath() const;
-  void RefreshLinkStatus();
-  void SetOpenRobloxLinks(bool on);
   void BringToFront();
   void OnLinkRequest(std::string launch_request);
   void SendPendingJoin();
@@ -641,10 +639,6 @@ class App final : public AccessibilityHost {
   bool notices_loaded_ = false;
   std::vector<NoticeBlock> notices_;
   std::wstring license_text_;
-  LinkStatus link_status_;
-  std::wstring link_blocker_;
-  std::wstring link_message_;
-  bool link_status_loaded_ = false;
   std::optional<PendingJoin> pending_join_;
   RobloxVersionCheck roblox_version_;
   RobloxUpdateFlow roblox_update_;

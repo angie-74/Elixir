@@ -21,6 +21,7 @@ enum ExitCode : int {
   kExitPayloadLoad = 6,
   kExitUnresolvedImports = 7,
   kExitNotImplemented = 10,
+  kExitRestart = 20,
 };
 
 enum class RuntimeMode {

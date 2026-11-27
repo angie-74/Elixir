@@ -82,6 +82,7 @@
 
 #include <functional>
 
+#include "elixir_runtime/app_restart.h"
 #include "elixir_runtime/roblox_startup.h"
 #include "elixir_runtime/sign_in_identity.h"
 #include "jnivm/jnivm.h"
@@ -798,6 +799,9 @@ int RunElixirRuntime(const std::vector<std::string>& arguments) {
   sign_in_options.log = [](std::string_view line) { Log(line); };
   sign_in_options.store = session_store;
   const std::unique_ptr<SignInIdentity> sign_in = SignInIdentity::Install(*java_vm, std::move(sign_in_options));
+  AppRestart::Options restart_options;
+  restart_options.log = [](std::string_view line) { Log(line); };
+  const std::shared_ptr<AppRestart> restart = AppRestart::Install(*java_vm, std::move(restart_options));
   if (sign_in == nullptr) {
     Log("sign-in: the account lookup is unavailable (its thread could not be started)");
   } else {
@@ -1018,12 +1022,15 @@ int RunElixirRuntime(const std::vector<std::string>& arguments) {
     }
     const GameSessionEnd end =
         experience_ready
-            ? game.Run(g_stop_requested, options.stop_after_ms ? static_cast<std::uint64_t>(*options.stop_after_ms) : 0)
+            ? game.Run(g_stop_requested, options.stop_after_ms ? static_cast<std::uint64_t>(*options.stop_after_ms) : 0,
+                       &restart->requested())
             : GameSessionEnd::kFailed;
     const char* reason = end == GameSessionEnd::kClosed    ? "the game window was closed"
                          : end == GameSessionEnd::kStopped ? "stop requested"
                          : end == GameSessionEnd::kFailed  ? "the experience session failed"
+                         : end == GameSessionEnd::kRestart ? RestartReason(restart->cause())
                                                            : "--stop-after reached";
+    restart->Detach();
     Log(std::string("session ends: ") + reason);
     game.StopInput();
     if (sign_in != nullptr) static_cast<void>(java_vm->RefreshRobloxCredentialFromEngine(java_vm->GetJNIEnv()));
@@ -1054,6 +1061,10 @@ int RunElixirRuntime(const std::vector<std::string>& arguments) {
     if (end == GameSessionEnd::kFailed) {
       EmitEvent(2, "error", "the game session ended unexpectedly");
       return shutdown(kExitGuestRuntime);
+    }
+    if (end == GameSessionEnd::kRestart) {
+      EmitEvent(3, "restart", std::string(reason) + "; " + frames);
+      return shutdown(kExitRestart);
     }
     EmitEvent(3, end == GameSessionEnd::kStopped ? "stopped" : "ended", std::string(reason) + "; " + frames);
     return shutdown(kExitOk);

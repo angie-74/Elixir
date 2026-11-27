@@ -14,10 +14,13 @@
 #include <string_view>
 #include <vector>
 
+#include "elixir_runtime/cli.h"
 #include "elixir_runtime/host_log.h"
 #include "elixir_runtime/link_joins.h"
 #include "elixir_runtime/runtime_main.h"
 #include "runtime/session_log.h"
+
+static_assert(static_cast<unsigned>(elixir::runtime::kExitRestart) == ELIXIR_EXIT_RESTART);
 
 #ifndef ELIXIR_VERSION
 #define ELIXIR_VERSION "0.0.0"

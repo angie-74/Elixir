@@ -6,10 +6,13 @@
 #include <windows.h>
 
 #include <objbase.h>
+#include <propidl.h>
+#include <propsys.h>
 #include <shlobj.h>
 #include <shobjidl.h>
 
 #include <algorithm>
+#include <cstring>
 #include <cwctype>
 
 #include "core/link_request.h"
@@ -20,6 +23,8 @@ namespace elixir::launcher {
 namespace {
 
 constexpr wchar_t kGameLinkPrefix[] = L"roblox://experiences/start?placeId=";
+
+constexpr PROPERTYKEY kAppIdProperty = {{0x9F4C2855, 0x9F79, 0x4B39, {0xA8, 0xD0, 0xE1, 0xD4, 0x2D, 0xE1, 0xD5, 0xF3}}, 5};
 
 class ComScope {
  public:
@@ -82,6 +87,21 @@ bool CreateShortcut(const std::wstring& link_path, const ShortcutSpec& spec, std
   if (SUCCEEDED(hr)) hr = link->SetIconLocation(spec.icon.empty() ? spec.target.c_str() : spec.icon.c_str(), 0);
   if (SUCCEEDED(hr)) hr = link->SetDescription(spec.description.substr(0, INFOTIPSIZE - 1).c_str());
   if (FAILED(hr)) return fail(L"The shortcut couldn’t be created.", hr);
+  if (!spec.app_id.empty()) {
+    Released<IPropertyStore> properties;
+    if (SUCCEEDED(link->QueryInterface(IID_PPV_ARGS(properties.out())))) {
+      PROPVARIANT value;
+      PropVariantInit(&value);
+      const std::size_t bytes = (spec.app_id.size() + 1) * sizeof(wchar_t);
+      value.pwszVal = static_cast<wchar_t*>(CoTaskMemAlloc(bytes));
+      if (value.pwszVal != nullptr) {
+        memcpy(value.pwszVal, spec.app_id.c_str(), bytes);
+        value.vt = VT_LPWSTR;
+        if (SUCCEEDED(properties->SetValue(kAppIdProperty, value))) properties->Commit();
+        PropVariantClear(&value);
+      }
+    }
+  }
   Released<IPersistFile> file;
   hr = link->QueryInterface(IID_PPV_ARGS(file.out()));
   if (FAILED(hr)) return fail(L"The shortcut couldn’t be created.", hr);
@@ -108,6 +128,16 @@ bool ReadShortcut(const std::wstring& link_path, ShortcutInfo* info) {
   wchar_t description[INFOTIPSIZE] = {};
   if (SUCCEEDED(link->GetDescription(description, static_cast<int>(std::size(description))))) {
     info->description = description;
+  }
+  info->app_id.clear();
+  Released<IPropertyStore> properties;
+  if (SUCCEEDED(link->QueryInterface(IID_PPV_ARGS(properties.out())))) {
+    PROPVARIANT value;
+    PropVariantInit(&value);
+    if (SUCCEEDED(properties->GetValue(kAppIdProperty, &value)) && value.vt == VT_LPWSTR && value.pwszVal != nullptr) {
+      info->app_id = value.pwszVal;
+    }
+    PropVariantClear(&value);
   }
   wchar_t icon[MAX_PATH * 2] = {};
   int icon_index = 0;

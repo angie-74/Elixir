@@ -19,6 +19,7 @@
 #include "core/shortcuts.h"
 #include "core/update.h"
 #include "core/util.h"
+#include "platform/windows/app_user_model_id.h"
 
 namespace elixir::launcher {
 
@@ -143,6 +144,7 @@ InstallEnvironment SystemInstallEnvironment() {
   if (length > 0 && length <= MAX_PATH) environment.temp_dir = WithoutTrailingSlash(temp);
   environment.desktop_dir = DesktopDirectory();
   environment.start_menu_dir = StartMenuProgramsDirectory();
+  environment.register_links = LinkRegistrationBlocker().empty();
   return environment;
 }
 
@@ -278,6 +280,7 @@ bool InstallElixir(const InstallRequest& request, const InstallEnvironment& envi
   ShortcutSpec spec;
   spec.target = target;
   spec.description = kProjectName;
+  spec.app_id = elixir::kAppUserModelId;
   if (request.desktop_shortcut && !environment.desktop_dir.empty()) {
     EnsureDirectory(environment.desktop_dir, nullptr);
     CreateShortcut(JoinPath(environment.desktop_dir, kElixirShortcutName), spec, nullptr);
@@ -286,7 +289,15 @@ bool InstallElixir(const InstallRequest& request, const InstallEnvironment& envi
     EnsureDirectory(environment.start_menu_dir, nullptr);
     CreateShortcut(JoinPath(environment.start_menu_dir, kElixirShortcutName), spec, nullptr);
   }
+  EnsureInstalledLinks(request.location, environment);
   return true;
+}
+
+void EnsureInstalledLinks(const std::wstring& location, const InstallEnvironment& environment) {
+  if (!environment.register_links || location.empty()) return;
+  const std::wstring program = InstalledExecutable(location);
+  if (!PathIsFile(program)) return;
+  EnsureLinkHandlers(environment.links, program, LinkBackupFile(location), nullptr);
 }
 
 std::wstring FileProductVersion(const std::wstring& path) {
@@ -419,8 +430,7 @@ void UninstallElixir(const UninstallRequest& request, const InstallEnvironment& 
   const bool remove_files = SafeToRemoveFrom(location, environment);
 
   std::wstring ignored;
-  UnregisterLinkHandlers(environment.links, program,
-                         JoinPath(JoinPath(location, L"links"), L"previous-handlers.json"), &ignored);
+  UnregisterLinkHandlers(environment.links, program, LinkBackupFile(location), &ignored);
 
   if (!environment.desktop_dir.empty()) {
     for (const GameShortcut& game : ListGameShortcuts(environment.desktop_dir, program)) {

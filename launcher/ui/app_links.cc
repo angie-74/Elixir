@@ -12,16 +12,6 @@
 
 namespace elixir::launcher::ui {
 
-std::wstring App::LinkBackupPath() const {
-  return JoinPath(JoinPath(paths_.data_root, L"links"), L"previous-handlers.json");
-}
-
-void App::RefreshLinkStatus() {
-  link_status_ = QueryLinkHandlers(LinkRegistry{}, ExecutablePath());
-  link_blocker_ = LinkRegistrationBlocker();
-  link_status_loaded_ = true;
-}
-
 void App::PostInstanceMessage(InstanceMessage message) {
   PostToWindow(hwnd_, this, [this, message = std::move(message)]() mutable {
     if (message.kind == InstanceMessageKind::kActivate && IsWindowVisible(launch_menu_.hwnd())) {
@@ -177,16 +167,6 @@ void App::OpenAnotherWindow() {
       ShowToast(L"Opening Roblox instance " + std::to_wstring(number) + L"…");
     };
   });
-}
-
-void App::SetOpenRobloxLinks(bool on) {
-  if (options_.test_mode || !link_blocker_.empty()) return;
-  std::wstring error;
-  const bool ok = on ? RegisterLinkHandlers(LinkRegistry{}, ExecutablePath(), LinkBackupPath(), &error)
-                     : UnregisterLinkHandlers(LinkRegistry{}, ExecutablePath(), LinkBackupPath(), &error);
-  link_message_ = ok ? std::wstring() : error;
-  RefreshLinkStatus();
-  Invalidate();
 }
 
 }

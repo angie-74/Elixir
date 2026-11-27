@@ -33,6 +33,7 @@ struct InstallEnvironment {
   std::wstring desktop_dir;
   std::wstring start_menu_dir;
   LinkRegistry links;
+  bool register_links = true;
 };
 
 InstallEnvironment SystemInstallEnvironment();
@@ -56,6 +57,8 @@ struct InstallRequest {
 };
 
 bool InstallElixir(const InstallRequest& request, const InstallEnvironment& environment, std::wstring* error);
+
+void EnsureInstalledLinks(const std::wstring& location, const InstallEnvironment& environment);
 
 std::wstring FileProductVersion(const std::wstring& path);
 bool SameFileContents(const std::wstring& a, const std::wstring& b);

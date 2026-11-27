@@ -13,6 +13,7 @@
 #include "core/mods.h"
 #include "core/shortcuts.h"
 #include "core/util.h"
+#include "platform/windows/app_user_model_id.h"
 #include "resource.h"
 #include "ui/app.h"
 
@@ -164,6 +165,7 @@ void App::SetElixirShortcut(bool desktop, bool on) {
       ShortcutSpec spec;
       spec.target = program;
       spec.description = L"Elixir";
+      spec.app_id = elixir::kAppUserModelId;
       ok = CreateShortcut(link, spec, &error);
     }
   } else {

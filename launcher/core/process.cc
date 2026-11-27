@@ -465,6 +465,11 @@ std::wstring RuntimeExitMeaning(DWORD code) {
   return {};
 }
 
+bool ShouldRestartRuntime(DWORD exit_code, bool stopped_by_launcher, ULONGLONG now_ms, ULONGLONG last_restart_ms) {
+  if (exit_code != kRuntimeRestartExitCode || stopped_by_launcher) return false;
+  return last_restart_ms == 0 || now_ms - last_restart_ms >= kRuntimeRestartMinGapMs;
+}
+
 namespace {
 
 RuntimeLaunch StartRuntime(const LauncherConfig& config, const LauncherPaths& paths,
