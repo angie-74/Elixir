@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Elixir: the Android version of Roblox on Windows</title>
+  <meta name="description" content="Elixir runs the Android version of Roblox directly on Windows 10 and 11, without an emulator. Free and open source.">
+  <meta name="theme-color" content="#0f0f10">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Elixir: the Android version of Roblox on Windows">
+  <meta property="og:description" content="Elixir runs the Android version of Roblox directly on Windows 10 and 11, without an emulator. Free and open source.">
+  <meta property="og:image" content="https://angie-74.github.io/Elixir/assets/launcher.png">
+  <link rel="icon" type="image/svg+xml" href="assets/elixir-icon.svg">
+  <link rel="stylesheet" href="styles.css">
+  <script>document.documentElement.className = "js";</script>
+</head>
+<body>
+  <svg class="sprite" aria-hidden="true" width="0" height="0" style="position:absolute">
+    <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/>
+    </symbol>
+    <symbol id="i-github" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/>
+    </symbol>
+  </svg>
+
+  <a class="skip" href="#main">Skip to the content</a>
+
+  <div class="bar">
+    <header class="top">
+      <a class="brand" href="./" aria-label="Elixir">
+        <img src="assets/elixir-logo.svg" alt="Elixir" width="111" height="40">
+      </a>
+      <nav aria-label="Sections">
+        <a class="nav-link" href="#features">Features</a>
+        <a class="nav-link" href="#questions">Questions</a>
+        <a class="nav-source" href="https://github.com/angie-74/Elixir" aria-label="GitHub">
+          <svg class="icon" width="18" height="18"><use href="#i-github"/></svg>
+          <span>GitHub</span>
+        </a>
+        <a class="nav-download" href="https://github.com/angie-74/Elixir/releases/latest/download/Elixir.exe">
+          <svg class="icon" width="16" height="16"><use href="#i-download"/></svg>
+          Download
+        </a>
+      </nav>
+    </header>
+  </div>
+
+  <main id="main">
+    <section class="hero">
+      <h1>The Android version of Roblox, running on Windows.</h1>
+      <p class="lead">Elixir runs Roblox's Android app directly on Windows, without an emulator.</p>
+      <div class="actions">
+        <a class="button primary" href="https://github.com/angie-74/Elixir/releases/latest/download/Elixir.exe">
+          <svg class="icon" width="20" height="20"><use href="#i-download"/></svg>
+          Download Elixir
+        </a>
+        <a class="button quiet" href="https://github.com/angie-74/Elixir">
+          <svg class="icon" width="20" height="20"><use href="#i-github"/></svg>
+          Source code
+        </a>
+      </div>
+
+      <figure class="window">
+        <img src="assets/launcher.png" width="1180" height="790"
+             alt="Elixir's launcher on the Global Settings page, with graphics quality, frame rate cap and text size.">
+      </figure>
+    </section>
+
+    <section class="features" id="features" aria-labelledby="features-title">
+      <h2 id="features-title" data-reveal>Features</h2>
+
+      <div class="rows">
+        <article class="row" data-reveal>
+          <div class="row-text">
+            <h3>Global Settings</h3>
+            <p>Frame rate cap, graphics quality, text size and mouse sensitivity, set before Roblox opens.</p>
+          </div>
+          <figure class="row-shot"><img src="assets/feature-global-settings.png" width="920" height="570" alt="The Global Settings page with graphics quality, frame rate cap and background transparency."></figure>
+        </article>
+        <article class="row" data-reveal>
+          <div class="row-text">
+            <h3>Fast Flags</h3>
+            <p>An editor with search, presets, import and export. It shows which flags Roblox will accept.</p>
+          </div>
+          <figure class="row-shot"><img src="assets/feature-fast-flags.png" width="920" height="570" alt="The Fast Flags page with the Fast Flag Editor."></figure>
+        </article>
+        <article class="row" data-reveal>
+          <div class="row-text">
+            <h3>Mods</h3>
+            <p>Replace Roblox's textures, sounds and fonts with your own. Roblox's installed files stay as they are.</p>
+          </div>
+          <figure class="row-shot"><img src="assets/feature-mods.png" width="920" height="570" alt="The Mods page with the Mods folder and a custom font."></figure>
+        </article>
+        <article class="row" data-reveal>
+          <div class="row-text">
+            <h3>Roblox versions</h3>
+            <p>Pick the Roblox version to install, update inside the app, or roll back.</p>
+          </div>
+          <figure class="row-shot"><img src="assets/feature-versions.png" width="920" height="570" alt="The Installation page with a list of Roblox versions."></figure>
+        </article>
+        <article class="row" data-reveal>
+          <div class="row-text">
+            <h3>Game shortcuts</h3>
+            <p>Put a game on your desktop or Start menu with its own name and icon.</p>
+          </div>
+          <figure class="row-shot"><img src="assets/feature-shortcuts.png" width="920" height="570" alt="The Shortcuts page with desktop, Start menu and game shortcuts."></figure>
+        </article>
+      </div>
+    </section>
+
+    <section class="questions" id="questions" aria-labelledby="questions-title">
+      <h2 id="questions-title" data-reveal>Questions</h2>
+      <div class="answers" data-reveal>
+        <details open>
+          <summary>What is Elixir?</summary>
+          <p>A program that runs the Android version of Roblox on a Windows PC. The Roblox app itself is not changed.</p>
+        </details>
+        <details>
+          <summary>Is Elixir made by Roblox?</summary>
+          <p>No. Elixir is an independent open-source project and is not affiliated with Roblox Corporation.</p>
+        </details>
+        <details>
+          <summary>Is it safe?</summary>
+          <p>Elixir's source code is public under the Apache License 2.0, and the download here is built from it. Before Elixir installs Roblox, it checks that the app is signed by Roblox.</p>
+        </details>
+        <details>
+          <summary>Can I get banned for using it?</summary>
+          <p>Elixir does not change Roblox's app or get around its sign-in or security. Roblox does not support Elixir either, so nobody can promise anything. Use it at your own risk.</p>
+        </details>
+        <details>
+          <summary>What does my PC need?</summary>
+          <p>64-bit Windows 10 or 11 and a graphics card with Vulkan.</p>
+        </details>
+        <details>
+          <summary>Something does not work. Where do I report it?</summary>
+          <p>Open an issue on <a href="https://github.com/angie-74/Elixir/issues">GitHub</a>. If Roblox closed with an error, the Crash logs page in the launcher has the report to attach.</p>
+        </details>
+        <details>
+          <summary>Is this the official site?</summary>
+          <p>Yes. Elixir has two official places: this site and its <a href="https://github.com/angie-74/Elixir">GitHub repository</a>. Download Elixir only from them.</p>
+        </details>
+      </div>
+    </section>
+  </main>
+
+  <footer class="bottom">
+    <p>Elixir is free software under the <a href="https://github.com/angie-74/Elixir/blob/main/LICENSE">Apache License 2.0</a>.</p>
+    <p>Elixir is not affiliated with Roblox Corporation. Roblox is a trademark of Roblox Corporation.</p>
+    <nav aria-label="Links">
+      <a href="https://github.com/angie-74/Elixir">GitHub</a>
+      <a href="https://github.com/angie-74/Elixir/releases">Releases</a>
+      <a href="https://github.com/angie-74/Elixir/issues">Issues</a>
+    </nav>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
