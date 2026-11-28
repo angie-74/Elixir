@@ -34,6 +34,13 @@ bool DecodeEtcImageBlockRows(EtcFormat format, const std::uint8_t* source,
                              std::uint32_t first_block_row, std::uint32_t block_row_count,
                              std::uint8_t* destination, std::size_t destination_bytes);
 
+bool DecodeEtcImageBlockRowsPortable(EtcFormat format, const std::uint8_t* source,
+                                     std::size_t source_bytes, std::uint32_t width, std::uint32_t height,
+                                     std::uint32_t first_block_row, std::uint32_t block_row_count,
+                                     std::uint8_t* destination, std::size_t destination_bytes);
+
+bool EtcDecoderIsVectorized();
+
 struct EtcDecodeJob {
   EtcFormat format = EtcFormat::kEtc2Rgb8;
   const std::uint8_t* source = nullptr;
@@ -44,6 +51,9 @@ struct EtcDecodeJob {
   std::size_t destination_bytes = 0;
   bool ok = false;
 };
+
+inline constexpr std::uint64_t kEtcParallelMinimumBlocks = 131072;
+inline constexpr unsigned kEtcMaximumDecodeThreads = 4;
 
 void DecodeEtcJobs(EtcDecodeJob* jobs, std::size_t count, unsigned worker_count);
 

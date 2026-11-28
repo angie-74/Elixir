@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 #include "graphics/vulkan/etc2_decoder.h"
 #include "graphics/vulkan/vulkan_host_headers.h"
@@ -42,7 +43,11 @@ struct Etc2Statistics {
   std::uint64_t compressed_bytes = 0;
   std::uint64_t failures = 0;
   std::uint64_t dropped_readbacks = 0;
+  std::uint64_t decoded_bytes = 0;
+  std::uint64_t decode_microseconds = 0;
 };
+
+std::string Etc2DecodeReport();
 
 class VulkanEtc2Emulation final {
  public:

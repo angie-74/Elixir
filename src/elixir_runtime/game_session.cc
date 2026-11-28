@@ -46,6 +46,7 @@
 #include "mocktail/audio/webrtc_jni_audio_bridge.h"
 #endif
 #if defined(ELIXIR_RUNTIME_HAS_VULKAN)
+#include "graphics/vulkan/etc2_emulation.h"
 #include "graphics/vulkan/guest_vulkan.h"
 #endif
 #if defined(ELIXIR_RUNTIME_HAS_EXPERIENCE)
@@ -467,6 +468,10 @@ GameSessionEnd GameSession::Run(const std::atomic<bool>& stop, std::uint64_t tim
       if (!futex.empty()) Log("session: " + futex);
       const std::string mapping = bionic::MmStatisticsReport();
       if (!mapping.empty()) Log("session: " + mapping);
+#if defined(ELIXIR_RUNTIME_HAS_VULKAN)
+      const std::string textures = vulkan::Etc2DecodeReport();
+      if (!textures.empty()) Log("session: " + textures);
+#endif
       frames_at_report = frames;
       last_report = now;
     }

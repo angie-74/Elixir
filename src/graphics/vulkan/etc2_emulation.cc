@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -272,6 +273,9 @@ struct Counters {
   std::atomic<std::uint64_t> compressed_bytes{0};
   std::atomic<std::uint64_t> failures{0};
   std::atomic<std::uint64_t> dropped_readbacks{0};
+  std::atomic<std::uint64_t> decoded_bytes{0};
+  std::atomic<std::uint64_t> decode_microseconds{0};
+  std::atomic<std::uint64_t> longest_decode_microseconds{0};
 };
 
 Counters& Stats() {
@@ -1336,14 +1340,28 @@ void VulkanEtc2Emulation::PrepareSubmit(const VkCommandBuffer* command_buffers, 
     }
   }
   memory_lock.unlock();
+  const auto decode_start = std::chrono::steady_clock::now();
   DecodeEtcJobs(jobs.data(), jobs.size(), DecodeWorkerCount());
+  const auto decode_microseconds = static_cast<std::uint64_t>(
+      std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - decode_start).count());
+  std::uint64_t decoded_bytes = 0;
   for (const EtcDecodeJob& job : jobs) {
     if (!job.ok) {
       LogFailure("could not decode an upload layer");
+    } else {
+      decoded_bytes += job.destination_bytes;
     }
   }
-  Stats().decoded_uploads.fetch_add(copied_uploads.size(), std::memory_order_relaxed);
-  Stats().compressed_bytes.fetch_add(compressed_total, std::memory_order_relaxed);
+  Counters& counters = Stats();
+  counters.decoded_uploads.fetch_add(copied_uploads.size(), std::memory_order_relaxed);
+  counters.compressed_bytes.fetch_add(compressed_total, std::memory_order_relaxed);
+  counters.decoded_bytes.fetch_add(decoded_bytes, std::memory_order_relaxed);
+  counters.decode_microseconds.fetch_add(decode_microseconds, std::memory_order_relaxed);
+  std::uint64_t longest = counters.longest_decode_microseconds.load(std::memory_order_relaxed);
+  while (decode_microseconds > longest &&
+         !counters.longest_decode_microseconds.compare_exchange_weak(longest, decode_microseconds,
+                                                                     std::memory_order_relaxed)) {
+  }
   compressed_offset = 0;
   decoded_offset = 0;
   for (std::size_t index = 0; index < copied_uploads.size(); ++index) {
@@ -1378,7 +1396,40 @@ Etc2Statistics VulkanEtc2Emulation::Statistics() const {
   result.compressed_bytes = counters.compressed_bytes.load(std::memory_order_relaxed);
   result.failures = counters.failures.load(std::memory_order_relaxed);
   result.dropped_readbacks = counters.dropped_readbacks.load(std::memory_order_relaxed);
+  result.decoded_bytes = counters.decoded_bytes.load(std::memory_order_relaxed);
+  result.decode_microseconds = counters.decode_microseconds.load(std::memory_order_relaxed);
   return result;
+}
+
+std::string Etc2DecodeReport() {
+  static std::atomic<std::uint64_t> seen_uploads{0};
+  static std::atomic<std::uint64_t> seen_compressed{0};
+  static std::atomic<std::uint64_t> seen_decoded{0};
+  static std::atomic<std::uint64_t> seen_microseconds{0};
+  Counters& counters = Stats();
+  const std::uint64_t uploads = counters.decoded_uploads.load(std::memory_order_relaxed);
+  const std::uint64_t compressed = counters.compressed_bytes.load(std::memory_order_relaxed);
+  const std::uint64_t decoded = counters.decoded_bytes.load(std::memory_order_relaxed);
+  const std::uint64_t microseconds = counters.decode_microseconds.load(std::memory_order_relaxed);
+  const std::uint64_t longest = counters.longest_decode_microseconds.exchange(0, std::memory_order_relaxed);
+  const std::uint64_t new_uploads = uploads - seen_uploads.exchange(uploads, std::memory_order_relaxed);
+  const std::uint64_t new_compressed = compressed - seen_compressed.exchange(compressed, std::memory_order_relaxed);
+  const std::uint64_t new_decoded = decoded - seen_decoded.exchange(decoded, std::memory_order_relaxed);
+  const std::uint64_t new_microseconds =
+      microseconds - seen_microseconds.exchange(microseconds, std::memory_order_relaxed);
+  if (new_uploads == 0) {
+    return {};
+  }
+  constexpr double kMegabyte = 1024.0 * 1024.0;
+  char text[256];
+  std::snprintf(text, sizeof(text),
+                "texture decoding: %llu %s, %.2f MB of ETC textures became %.2f MB in %.2f ms, the longest submit "
+                "took %.2f ms%s",
+                static_cast<unsigned long long>(new_uploads), new_uploads == 1 ? "upload" : "uploads",
+                static_cast<double>(new_compressed) / kMegabyte, static_cast<double>(new_decoded) / kMegabyte,
+                static_cast<double>(new_microseconds) / 1000.0, static_cast<double>(longest) / 1000.0,
+                EtcDecoderIsVectorized() ? "" : " (the portable decoder: this processor has no SSSE3)");
+  return text;
 }
 
 VulkanEtc2Emulation& Etc2Emulation() {
