@@ -1764,10 +1764,6 @@ ELIXIR_SYSV void elixir_vk_sysv_vkDestroyShaderModule(VkDevice device, VkShaderM
   ELIXIR_VK_HOST(vkDestroyShaderModule)(device, shaderModule, nullptr);
 }
 
-ELIXIR_SYSV void elixir_vk_sysv_vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain, const VkAllocationCallbacks*) {
-  ELIXIR_VK_HOST(vkDestroySwapchainKHR)(device, swapchain, nullptr);
-}
-
 ELIXIR_SYSV void elixir_vk_sysv_vkDestroyTensorARM(VkDevice device, VkTensorARM tensor, const VkAllocationCallbacks*) {
   ELIXIR_VK_HOST(vkDestroyTensorARM)(device, tensor, nullptr);
 }
@@ -2006,14 +2002,6 @@ ELIXIR_SYSV uint64_t elixir_vk_sysv_vkGetDeviceMemoryOpaqueCaptureAddressKHR(VkD
 
 ELIXIR_SYSV void elixir_vk_sysv_vkGetDeviceMicromapCompatibilityEXT(VkDevice device, const VkMicromapVersionInfoEXT* pVersionInfo, VkAccelerationStructureCompatibilityKHR* pCompatibility) {
   ELIXIR_VK_HOST(vkGetDeviceMicromapCompatibilityEXT)(device, pVersionInfo, pCompatibility);
-}
-
-ELIXIR_SYSV void elixir_vk_sysv_vkGetDeviceQueue(VkDevice device, uint32_t queueFamilyIndex, uint32_t queueIndex, VkQueue* pQueue) {
-  ELIXIR_VK_HOST(vkGetDeviceQueue)(device, queueFamilyIndex, queueIndex, pQueue);
-}
-
-ELIXIR_SYSV void elixir_vk_sysv_vkGetDeviceQueue2(VkDevice device, const VkDeviceQueueInfo2* pQueueInfo, VkQueue* pQueue) {
-  ELIXIR_VK_HOST(vkGetDeviceQueue2)(device, pQueueInfo, pQueue);
 }
 
 ELIXIR_SYSV VkResult elixir_vk_sysv_vkGetDeviceSubpassShadingMaxWorkgroupSizeHUAWEI(VkDevice device, VkRenderPass renderpass, VkExtent2D* pMaxWorkgroupSize) {
@@ -2526,10 +2514,6 @@ ELIXIR_SYSV void elixir_vk_sysv_vkGetShaderModuleIdentifierEXT(VkDevice device, 
 
 ELIXIR_SYSV VkResult elixir_vk_sysv_vkGetSwapchainCounterEXT(VkDevice device, VkSwapchainKHR swapchain, VkSurfaceCounterFlagBitsEXT counter, uint64_t* pCounterValue) {
   return ELIXIR_VK_HOST(vkGetSwapchainCounterEXT)(device, swapchain, counter, pCounterValue);
-}
-
-ELIXIR_SYSV VkResult elixir_vk_sysv_vkGetSwapchainImagesKHR(VkDevice device, VkSwapchainKHR swapchain, uint32_t* pSwapchainImageCount, VkImage* pSwapchainImages) {
-  return ELIXIR_VK_HOST(vkGetSwapchainImagesKHR)(device, swapchain, pSwapchainImageCount, pSwapchainImages);
 }
 
 ELIXIR_SYSV VkResult elixir_vk_sysv_vkGetSwapchainStatusKHR(VkDevice device, VkSwapchainKHR swapchain) {
@@ -3317,7 +3301,7 @@ ELIXIR_VK_SIGNATURE(vkDestroyShaderEXT, elixir_vk_sysv_vkDestroyShaderEXT)
 ELIXIR_VK_SIGNATURE(vkDestroyShaderInstrumentationARM, elixir_vk_sysv_vkDestroyShaderInstrumentationARM)
 ELIXIR_VK_SIGNATURE(vkDestroyShaderModule, elixir_vk_sysv_vkDestroyShaderModule)
 ELIXIR_VK_SIGNATURE(vkDestroySurfaceKHR, elixir_vk_intercept_vkDestroySurfaceKHR)
-ELIXIR_VK_SIGNATURE(vkDestroySwapchainKHR, elixir_vk_sysv_vkDestroySwapchainKHR)
+ELIXIR_VK_SIGNATURE(vkDestroySwapchainKHR, elixir_vk_intercept_vkDestroySwapchainKHR)
 ELIXIR_VK_SIGNATURE(vkDestroyTensorARM, elixir_vk_sysv_vkDestroyTensorARM)
 ELIXIR_VK_SIGNATURE(vkDestroyTensorViewARM, elixir_vk_sysv_vkDestroyTensorViewARM)
 ELIXIR_VK_SIGNATURE(vkDestroyValidationCacheEXT, elixir_vk_sysv_vkDestroyValidationCacheEXT)
@@ -3395,8 +3379,8 @@ ELIXIR_VK_SIGNATURE(vkGetDeviceMemoryOpaqueCaptureAddress, elixir_vk_sysv_vkGetD
 ELIXIR_VK_SIGNATURE(vkGetDeviceMemoryOpaqueCaptureAddressKHR, elixir_vk_sysv_vkGetDeviceMemoryOpaqueCaptureAddressKHR)
 ELIXIR_VK_SIGNATURE(vkGetDeviceMicromapCompatibilityEXT, elixir_vk_sysv_vkGetDeviceMicromapCompatibilityEXT)
 ELIXIR_VK_SIGNATURE(vkGetDeviceProcAddr, elixir_vk_intercept_vkGetDeviceProcAddr)
-ELIXIR_VK_SIGNATURE(vkGetDeviceQueue, elixir_vk_sysv_vkGetDeviceQueue)
-ELIXIR_VK_SIGNATURE(vkGetDeviceQueue2, elixir_vk_sysv_vkGetDeviceQueue2)
+ELIXIR_VK_SIGNATURE(vkGetDeviceQueue, elixir_vk_intercept_vkGetDeviceQueue)
+ELIXIR_VK_SIGNATURE(vkGetDeviceQueue2, elixir_vk_intercept_vkGetDeviceQueue2)
 ELIXIR_VK_SIGNATURE(vkGetDeviceSubpassShadingMaxWorkgroupSizeHUAWEI, elixir_vk_sysv_vkGetDeviceSubpassShadingMaxWorkgroupSizeHUAWEI)
 ELIXIR_VK_SIGNATURE(vkGetDeviceTensorMemoryRequirementsARM, elixir_vk_sysv_vkGetDeviceTensorMemoryRequirementsARM)
 ELIXIR_VK_SIGNATURE(vkGetDisplayModeProperties2KHR, elixir_vk_sysv_vkGetDisplayModeProperties2KHR)
@@ -3542,7 +3526,7 @@ ELIXIR_VK_SIGNATURE(vkGetShaderInstrumentationValuesARM, elixir_vk_sysv_vkGetSha
 ELIXIR_VK_SIGNATURE(vkGetShaderModuleCreateInfoIdentifierEXT, elixir_vk_sysv_vkGetShaderModuleCreateInfoIdentifierEXT)
 ELIXIR_VK_SIGNATURE(vkGetShaderModuleIdentifierEXT, elixir_vk_sysv_vkGetShaderModuleIdentifierEXT)
 ELIXIR_VK_SIGNATURE(vkGetSwapchainCounterEXT, elixir_vk_sysv_vkGetSwapchainCounterEXT)
-ELIXIR_VK_SIGNATURE(vkGetSwapchainImagesKHR, elixir_vk_sysv_vkGetSwapchainImagesKHR)
+ELIXIR_VK_SIGNATURE(vkGetSwapchainImagesKHR, elixir_vk_intercept_vkGetSwapchainImagesKHR)
 ELIXIR_VK_SIGNATURE(vkGetSwapchainStatusKHR, elixir_vk_sysv_vkGetSwapchainStatusKHR)
 ELIXIR_VK_SIGNATURE(vkGetSwapchainTimeDomainPropertiesEXT, elixir_vk_sysv_vkGetSwapchainTimeDomainPropertiesEXT)
 ELIXIR_VK_SIGNATURE(vkGetSwapchainTimingPropertiesEXT, elixir_vk_sysv_vkGetSwapchainTimingPropertiesEXT)
@@ -4108,7 +4092,7 @@ const CommandInfo kCommands[kCommandCount] = {
     {"vkDestroyShaderInstrumentationARM", ELIXIR_VK_PROC(elixir_vk_sysv_vkDestroyShaderInstrumentationARM), 0, "VK_ARM_shader_instrumentation", CommandLevel::kDevice, 0},
     {"vkDestroyShaderModule", ELIXIR_VK_PROC(elixir_vk_sysv_vkDestroyShaderModule), VK_API_VERSION_1_0, nullptr, CommandLevel::kDevice, kCommandCore | kCommandLibvulkanExport},
     {"vkDestroySurfaceKHR", ELIXIR_VK_PROC(elixir_vk_intercept_vkDestroySurfaceKHR), 0, "VK_KHR_surface", CommandLevel::kInstance, kCommandIntercepted | kCommandLibvulkanExport},
-    {"vkDestroySwapchainKHR", ELIXIR_VK_PROC(elixir_vk_sysv_vkDestroySwapchainKHR), 0, "VK_KHR_swapchain", CommandLevel::kDevice, kCommandLibvulkanExport},
+    {"vkDestroySwapchainKHR", ELIXIR_VK_PROC(elixir_vk_intercept_vkDestroySwapchainKHR), 0, "VK_KHR_swapchain", CommandLevel::kDevice, kCommandIntercepted | kCommandLibvulkanExport},
     {"vkDestroyTensorARM", ELIXIR_VK_PROC(elixir_vk_sysv_vkDestroyTensorARM), 0, "VK_ARM_tensors", CommandLevel::kDevice, 0},
     {"vkDestroyTensorViewARM", ELIXIR_VK_PROC(elixir_vk_sysv_vkDestroyTensorViewARM), 0, "VK_ARM_tensors", CommandLevel::kDevice, 0},
     {"vkDestroyValidationCacheEXT", ELIXIR_VK_PROC(elixir_vk_sysv_vkDestroyValidationCacheEXT), 0, "VK_EXT_validation_cache", CommandLevel::kDevice, 0},
@@ -4187,8 +4171,8 @@ const CommandInfo kCommands[kCommandCount] = {
     {"vkGetDeviceMemoryOpaqueCaptureAddressKHR", ELIXIR_VK_PROC(elixir_vk_sysv_vkGetDeviceMemoryOpaqueCaptureAddressKHR), 0, "VK_KHR_buffer_device_address", CommandLevel::kDevice, kCommandAlias},
     {"vkGetDeviceMicromapCompatibilityEXT", ELIXIR_VK_PROC(elixir_vk_sysv_vkGetDeviceMicromapCompatibilityEXT), 0, "VK_EXT_opacity_micromap", CommandLevel::kDevice, 0},
     {"vkGetDeviceProcAddr", ELIXIR_VK_PROC(elixir_vk_intercept_vkGetDeviceProcAddr), VK_API_VERSION_1_0, nullptr, CommandLevel::kDevice, kCommandCore | kCommandIntercepted | kCommandLibvulkanExport},
-    {"vkGetDeviceQueue", ELIXIR_VK_PROC(elixir_vk_sysv_vkGetDeviceQueue), VK_API_VERSION_1_0, nullptr, CommandLevel::kDevice, kCommandCore | kCommandLibvulkanExport},
-    {"vkGetDeviceQueue2", ELIXIR_VK_PROC(elixir_vk_sysv_vkGetDeviceQueue2), VK_API_VERSION_1_1, nullptr, CommandLevel::kDevice, kCommandCore | kCommandLibvulkanExport},
+    {"vkGetDeviceQueue", ELIXIR_VK_PROC(elixir_vk_intercept_vkGetDeviceQueue), VK_API_VERSION_1_0, nullptr, CommandLevel::kDevice, kCommandCore | kCommandIntercepted | kCommandLibvulkanExport},
+    {"vkGetDeviceQueue2", ELIXIR_VK_PROC(elixir_vk_intercept_vkGetDeviceQueue2), VK_API_VERSION_1_1, nullptr, CommandLevel::kDevice, kCommandCore | kCommandIntercepted | kCommandLibvulkanExport},
     {"vkGetDeviceSubpassShadingMaxWorkgroupSizeHUAWEI", ELIXIR_VK_PROC(elixir_vk_sysv_vkGetDeviceSubpassShadingMaxWorkgroupSizeHUAWEI), 0, "VK_HUAWEI_subpass_shading", CommandLevel::kDevice, 0},
     {"vkGetDeviceTensorMemoryRequirementsARM", ELIXIR_VK_PROC(elixir_vk_sysv_vkGetDeviceTensorMemoryRequirementsARM), 0, "VK_ARM_tensors", CommandLevel::kDevice, 0},
     {"vkGetDisplayModeProperties2KHR", ELIXIR_VK_PROC(elixir_vk_sysv_vkGetDisplayModeProperties2KHR), 0, "VK_KHR_get_display_properties2", CommandLevel::kInstance, 0},
@@ -4341,7 +4325,7 @@ const CommandInfo kCommands[kCommandCount] = {
     {"vkGetShaderModuleCreateInfoIdentifierEXT", ELIXIR_VK_PROC(elixir_vk_sysv_vkGetShaderModuleCreateInfoIdentifierEXT), 0, "VK_EXT_shader_module_identifier", CommandLevel::kDevice, 0},
     {"vkGetShaderModuleIdentifierEXT", ELIXIR_VK_PROC(elixir_vk_sysv_vkGetShaderModuleIdentifierEXT), 0, "VK_EXT_shader_module_identifier", CommandLevel::kDevice, 0},
     {"vkGetSwapchainCounterEXT", ELIXIR_VK_PROC(elixir_vk_sysv_vkGetSwapchainCounterEXT), 0, "VK_EXT_display_control", CommandLevel::kDevice, 0},
-    {"vkGetSwapchainImagesKHR", ELIXIR_VK_PROC(elixir_vk_sysv_vkGetSwapchainImagesKHR), 0, "VK_KHR_swapchain", CommandLevel::kDevice, kCommandLibvulkanExport},
+    {"vkGetSwapchainImagesKHR", ELIXIR_VK_PROC(elixir_vk_intercept_vkGetSwapchainImagesKHR), 0, "VK_KHR_swapchain", CommandLevel::kDevice, kCommandIntercepted | kCommandLibvulkanExport},
     {"vkGetSwapchainStatusKHR", ELIXIR_VK_PROC(elixir_vk_sysv_vkGetSwapchainStatusKHR), 0, "VK_KHR_shared_presentable_image", CommandLevel::kDevice, 0},
     {"vkGetSwapchainTimeDomainPropertiesEXT", ELIXIR_VK_PROC(elixir_vk_sysv_vkGetSwapchainTimeDomainPropertiesEXT), 0, "VK_EXT_present_timing", CommandLevel::kDevice, 0},
     {"vkGetSwapchainTimingPropertiesEXT", ELIXIR_VK_PROC(elixir_vk_sysv_vkGetSwapchainTimingPropertiesEXT), 0, "VK_EXT_present_timing", CommandLevel::kDevice, 0},

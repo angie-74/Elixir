@@ -167,6 +167,8 @@ LauncherPaths InstancePaths(const LauncherPaths& paths, int instance) {
   result.guest_runtime_dir = paths.guest_runtime_dir;
   result.bundle_dir = paths.bundle_dir;
   result.accounts_dir = paths.accounts_dir;
+  result.activity_dir = paths.activity_dir;
+  result.shaders_dir = paths.shaders_dir;
   return result;
 }
 

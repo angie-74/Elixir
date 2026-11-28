@@ -19,6 +19,8 @@ bool ParsePresentMode(std::string_view text, PresentMode* mode);
 inline constexpr double kResolutionScaleMin = 0.25;
 inline constexpr double kResolutionScaleMax = 1.0;
 inline constexpr double kStretchMax = 0.5;
+inline constexpr int kTargetFpsMin = 30;
+inline constexpr int kTargetFpsMax = 240;
 
 double ResolutionScaleOrDefault(double scale);
 double StretchOrDefault(double stretch);
@@ -28,6 +30,10 @@ struct GraphicsSettings {
   PresentMode present_mode = PresentMode::kFifo;
   double resolution_scale = 1.0;
   double stretch = 0.0;
+  bool upscaling = false;
+  double sharpness = 0.5;
+  bool dynamic_resolution = false;
+  int target_fps = 60;
 };
 
 struct PerformanceSettings {
@@ -59,6 +65,7 @@ struct IntegrationSettings {
   bool discord_join_button = false;
   bool discord_allow_game_presence = true;
   bool server_location = false;
+  bool activity_history = true;
 };
 
 struct ModSettings {

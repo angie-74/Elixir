@@ -110,6 +110,11 @@ HICON LoadAppIcon(int size) {
 
 }
 
+std::atomic<int>& BackgroundWorkers() {
+  static std::atomic<int> workers{0};
+  return workers;
+}
+
 const std::wstring& PageTitle(Page page) {
   switch (page) {
     case Page::kInstall: return T(L"Installation");
@@ -122,6 +127,8 @@ const std::wstring& PageTitle(Page page) {
     case Page::kAbout: return T(L"About");
     case Page::kMods: return T(L"Mods");
     case Page::kShortcuts: return T(L"Shortcuts");
+    case Page::kActivity: return T(L"Activity");
+    case Page::kShaders: return T(L"Shaders");
   }
   return T(L"");
 }
@@ -138,6 +145,8 @@ const char* PageKey(Page page) {
     case Page::kAbout: return "about";
     case Page::kMods: return "mods";
     case Page::kShortcuts: return "shortcuts";
+    case Page::kActivity: return "activity";
+    case Page::kShaders: return "shaders";
   }
   return "install";
 }
@@ -149,6 +158,10 @@ SIZE MinimumWindowSize(UINT dpi, const RECT& work_area) {
   const LONG work_width = std::max<LONG>(1, work_area.right - work_area.left);
   const LONG work_height = std::max<LONG>(1, work_area.bottom - work_area.top);
   return SIZE{std::min(frame.right - frame.left, work_width), std::min(frame.bottom - frame.top, work_height)};
+}
+
+Page StartPage(const LauncherConfig& config) {
+  return config.installed.present() ? Page::kActivity : Page::kInstall;
 }
 
 bool PageFromKey(std::string_view key, Page* page) {
@@ -187,7 +200,7 @@ App::App(AppOptions options)
   RefreshMotionSetting();
   apk_ = LocateApkComponent(paths_.exe_dir);
   if (!options_.test_mode) {
-    PageFromKey(config_.last_page, &page_);
+    page_ = StartPage(config_);
     SetLanguage(ResolveLanguage(config_.language));
   }
   CleanupApkWorkDirectory(JoinPath(paths_.data_root, L"tmp"));
@@ -201,6 +214,7 @@ App::~App() {
   if (roblox_update_.cancel) *roblox_update_.cancel = true;
   if (roblox_list_.cancel) *roblox_list_.cancel = true;
   if (hwnd_ != nullptr) DestroyWindow(hwnd_);
+  for (int waited = 0; BackgroundWorkers().load() > 0 && waited < 10000; waited += 5) Sleep(5);
   if (runtime_.process != nullptr) CloseHandle(runtime_.process);
   if (editor_font_ != nullptr) DeleteObject(editor_font_);
   if (field_brush_ != nullptr) DeleteObject(field_brush_);
@@ -305,6 +319,8 @@ void App::StartLauncherServices() {
   if (page_ == Page::kSettings) MeasureCaches();
   if (page_ == Page::kMods) RefreshMods();
   if (page_ == Page::kShortcuts) RefreshShortcuts();
+  if (page_ == Page::kActivity) RefreshActivity();
+  if (page_ == Page::kShaders) RefreshShaders();
   if (!options_.test_mode) {
     if ((options_.installed && config_.updates.auto_update) || page_ == Page::kUpdates) CheckForUpdates();
     const std::wstring staging = JoinPath(paths_.updates_dir, L"staging");
@@ -563,6 +579,8 @@ LRESULT App::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) {
         if (page_ == Page::kSettings) MeasureCaches();
         if (page_ == Page::kMods) RefreshMods();
         if (page_ == Page::kShortcuts) RefreshShortcuts();
+        if (page_ == Page::kActivity) RefreshActivity();
+        if (page_ == Page::kShaders) RefreshShaders();
       }
       Invalidate();
       break;
@@ -1404,6 +1422,8 @@ void App::OnKeyDown(WPARAM key) {
       if (page_ == Page::kGlobalSettings) RefreshGlobalSettings();
       if (page_ == Page::kMods) RefreshMods();
       if (page_ == Page::kShortcuts) RefreshShortcuts();
+      if (page_ == Page::kActivity) RefreshActivity();
+      if (page_ == Page::kShaders) RefreshShaders();
       Invalidate();
       return;
     case VK_ESCAPE:
@@ -1492,6 +1512,8 @@ void App::Navigate(Page page) {
     if (page == Page::kGlobalSettings) RefreshGlobalSettings();
     if (page == Page::kMods) RefreshMods();
     if (page == Page::kShortcuts) RefreshShortcuts();
+    if (page == Page::kActivity) RefreshActivity();
+    if (page == Page::kShaders) RefreshShaders();
     if (page == Page::kUpdates && releases_.stage == ReleaseHistory::Stage::kIdle) CheckForUpdates();
     if (hwnd_ != nullptr) NotifyWinEvent(EVENT_OBJECT_REORDER, hwnd_, OBJID_CLIENT, CHILDID_SELF);
   }
@@ -1586,6 +1608,7 @@ void App::RunInBackground(std::function<std::function<void()>()> work) {
   App* self = this;
   auto counter = pending_work_;
   ++*counter;
+  ++BackgroundWorkers();
   std::thread([hwnd, self, counter, work = std::move(work)]() {
     const HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     std::function<void()> done = work();
@@ -1598,6 +1621,7 @@ void App::RunInBackground(std::function<std::function<void()>()> work) {
       --*counter;
       delete task;
     }
+    --BackgroundWorkers();
   }).detach();
 }
 
@@ -2105,6 +2129,7 @@ void App::CloseLaunchProgress() {
 
 void App::OnRuntimeExited(DWORD exit_code) {
   CloseLaunchProgress();
+  RefreshActivity();
   if (MenuOpen(kInstanceAccountControl)) CloseMenu();
   const bool stopped = runtime_.stopping || exit_code == kStoppedByLauncherExitCode;
   const std::size_t crash_reports_before = crash_.entries.size();

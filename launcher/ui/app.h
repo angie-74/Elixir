@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "core/accounts.h"
+#include "core/activity.h"
 #include "core/apk_component.h"
 #include "core/audio_devices.h"
 #include "core/cache_cleaner.h"
@@ -40,6 +41,7 @@
 #include "core/mods.h"
 #include "core/notices.h"
 #include "core/shortcuts.h"
+#include "core/shaders.h"
 #include "core/i18n.h"
 #include "fflags/editor.h"
 #include "ui/accessibility.h"
@@ -61,12 +63,15 @@ enum class Page {
   kAbout,
   kGlobalSettings,
   kMods,
-  kShortcuts
+  kShortcuts,
+  kActivity,
+  kShaders
 };
-inline constexpr int kPageCount = 10;
+inline constexpr int kPageCount = 12;
 const std::wstring& PageTitle(Page page);
 const char* PageKey(Page page);
 bool PageFromKey(std::string_view key, Page* page);
+Page StartPage(const LauncherConfig& config);
 
 SIZE MinimumWindowSize(UINT dpi, const RECT& work_area);
 
@@ -181,6 +186,8 @@ class App final : public AccessibilityHost {
   bool fast_flags_dirty() const;
   const std::wstring& fast_flags_message() const { return fast_flags_.message; }
   void DeferForTest(std::function<void()> action) { Defer(std::move(action)); }
+  void ImportShaderForTest(const std::wstring& source) { ImportShaderFrom(source); }
+  const std::string* PendingJoinForTest() const { return pending_join_ ? &pending_join_->request : nullptr; }
   void SetRuntimeRunningForTest(bool running) {
     runtime_.running = running;
     Invalidate();
@@ -390,6 +397,8 @@ class App final : public AccessibilityHost {
   float BuildAboutLicenses(Ui& ui, float x, float y, float width);
   float BuildMods(Ui& ui, float x, float y, float width);
   float BuildShortcuts(Ui& ui, float x, float y, float width);
+  float BuildActivity(Ui& ui, float x, float y, float width);
+  float BuildShaders(Ui& ui, float x, float y, float width);
   float BuildFastFlags(Ui& ui, float x, float y, float width);
   float BuildGlobalSettings(Ui& ui, float x, float y, float width);
   void RefreshGlobalSettings();
@@ -545,6 +554,20 @@ class App final : public AccessibilityHost {
   void RemoveCustomFontMod();
   std::wstring ShortcutFolder(bool desktop) const;
   void RefreshShortcuts();
+  void RefreshActivity();
+  void RefreshShaders();
+  void SaveShaders();
+  void ImportShaderFile();
+  void ImportShaderFrom(const std::wstring& source);
+  void ExportShaderAt(std::size_t index);
+  void RemoveShaderAt(std::size_t index);
+  void MoveShader(std::size_t index, int delta);
+  void ResetShaders();
+  void UpdateActivityDetailsNow(bool force);
+  void JoinActivityGame(std::size_t index, bool same_server);
+  void RemoveActivityRow(std::size_t index);
+  void ClearActivityHistory();
+  const SavedAccount* ActivityAccount(std::int64_t user_id) const;
   void SetElixirShortcut(bool desktop, bool on);
   GameShortcutPlaces ShortcutPlaces() const;
   HttpGetFunction WebGet() const;
@@ -675,6 +698,28 @@ class App final : public AccessibilityHost {
     ListMotion motion;
   };
   ShortcutsView shortcuts_;
+  struct ActivityView {
+    std::vector<ActivityGame> games;
+    std::vector<SavedAccount> accounts;
+    bool loaded = false;
+    bool loading = false;
+    bool again = false;
+    bool updating = false;
+    ULONGLONG updated_at = 0;
+    ListMotion motion;
+  };
+  ActivityView activity_;
+  struct ShadersView {
+    shaders::ShaderLibrary library;
+    std::vector<std::wstring> problems;
+    std::vector<std::wstring> recovered;
+    bool loaded = false;
+    bool loading = false;
+    bool working = false;
+    int open = -1;
+    std::wstring message;
+  };
+  ShadersView shaders_;
   int about_tab_ = 0;
   bool notices_loaded_ = false;
   std::vector<NoticeBlock> notices_;

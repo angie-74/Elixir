@@ -12,6 +12,7 @@ namespace {
 
 std::atomic<bool> g_wanted{false};
 std::atomic<bool> g_refused{false};
+std::atomic<bool> g_own_scaler{false};
 std::atomic<PresentStretch> g_state{PresentStretch::kUnknown};
 
 bool Enabled(const std::vector<std::string>& names, const char* name) {
@@ -30,7 +31,12 @@ void SetPresentStretchWanted(bool wanted) { g_wanted.store(wanted, std::memory_o
 
 bool PresentStretchWanted() { return g_wanted.load(std::memory_order_acquire); }
 
+void SetOwnScaler(bool available) { g_own_scaler.store(available, std::memory_order_release); }
+
+bool OwnScaler() { return g_own_scaler.load(std::memory_order_acquire); }
+
 PresentStretch PresentStretchState() {
+  if (g_own_scaler.load(std::memory_order_acquire)) return PresentStretch::kSupported;
   if (g_refused.load(std::memory_order_acquire)) return PresentStretch::kUnsupported;
   return g_state.load(std::memory_order_acquire);
 }
@@ -44,6 +50,7 @@ void NotePresentStretchRefused() { g_refused.store(true, std::memory_order_relea
 void ResetPresentStretchForTest() {
   g_wanted.store(false, std::memory_order_release);
   g_refused.store(false, std::memory_order_release);
+  g_own_scaler.store(false, std::memory_order_release);
   g_state.store(PresentStretch::kUnknown, std::memory_order_release);
 }
 

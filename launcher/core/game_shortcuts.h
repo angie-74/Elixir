@@ -19,6 +19,9 @@ struct GameDetails {
   std::uint64_t universe_id = 0;
   std::wstring name;
   std::string icon_url;
+  std::uint64_t root_place_id = 0;
+  std::wstring description;
+  std::wstring creator;
 };
 
 bool IsRobloxImageUrl(std::string_view url);

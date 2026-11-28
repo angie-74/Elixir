@@ -117,6 +117,8 @@ struct RobloxGameSurfaceJniConfig {
   void (*bind_surface_scale)(void* context, jobject surface,
                              elixir::RenderScale render_scale) = nullptr;
   void (*reset_surface_scales)(void* context) = nullptr;
+  void (*set_window_scale)(void* context, std::uintptr_t native_window,
+                           elixir::RenderScale render_scale) = nullptr;
 
   bool complete() const {
     return !asset_folder_path.empty() && dpi_scale > 0.0f &&
@@ -134,6 +136,14 @@ struct RobloxGameSurfaceJniConfig {
     if (bind_surface_scale != nullptr && surface != nullptr) {
       bind_surface_scale(scaling_context, surface,
                          elixir::Normalized(render_scale));
+    }
+  }
+
+  void SetWindowScale(std::uintptr_t native_window,
+                      const elixir::RenderScale& render_scale) const {
+    if (set_window_scale != nullptr && native_window != 0) {
+      set_window_scale(scaling_context, native_window,
+                       elixir::Normalized(render_scale));
     }
   }
 

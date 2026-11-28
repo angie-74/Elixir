@@ -128,6 +128,7 @@ class RobloxExperienceComposition final {
   GameSessionUpdateResult SurfaceCreated(uint64_t generation);
   GameSessionUpdateResult SurfaceChanged(GameSurface surface);
   bool DropGameRenderScale();
+  bool ChangeGameRenderScale(const elixir::RenderScale& scale);
   GameSessionUpdateResult SurfaceDestroyed(uint64_t generation);
   Status Shutdown();
 

@@ -262,7 +262,9 @@ void App::BuildChrome(Ui& ui, float width, float height) {
     Page page;
     const wchar_t* shortcut;
   };
-  const Item main_items[] = {{Page::kInstall, L"Ctrl+1"},  {Page::kMods, L"Ctrl+9"},
+  const Item main_items[] = {{Page::kActivity, L""},
+                             {Page::kInstall, L"Ctrl+1"},  {Page::kMods, L"Ctrl+9"},
+                             {Page::kShaders, L""},
                              {Page::kFastFlags, L"Ctrl+2"}, {Page::kGlobalSettings, L"Ctrl+8"},
                              {Page::kIntegrations, L"Ctrl+3"}, {Page::kShortcuts, L"Ctrl+0"},
                              {Page::kSettings, L"Ctrl+4"}, {Page::kCrashLogs, L"Ctrl+5"}};
@@ -526,6 +528,10 @@ constexpr SearchEntry kSearchIndex[] = {
     {Page::kMods, ELIXIR_TR(L"Custom font"), L"mods font custom text typeface", L"mods.font.choose"},
     {Page::kShortcuts, ELIXIR_TR(L"Shortcuts"), L"shortcut shortcuts desktop start menu icon", L"shortcuts.desktop"},
     {Page::kShortcuts, ELIXIR_TR(L"Game shortcuts"), L"shortcut game experience place id desktop", L"shortcuts.game.name"},
+    {Page::kActivity, ELIXIR_TR(L"Activity"), L"activity history recent games servers rejoin played", L"activity.history"},
+    {Page::kShaders, ELIXIR_TR(L"Shaders"), L"shaders glsl effects bloom vignette fxaa color import", L"shaders.enabled"},
+    {Page::kShaders, ELIXIR_TR(L"Upscaling"), L"upscaling upscale sharpness sharpen dynamic target fps", L"shaders.upscaling"},
+    {Page::kShaders, ELIXIR_TR(L"Render scale"), L"render size smaller picture", L"shaders.scale"},
 };
 
 std::wstring Lower(std::wstring_view text) {
@@ -632,6 +638,8 @@ float App::BuildPage(Ui& ui, float x, float y, float width) {
     case Page::kAbout: return BuildAbout(ui, x, y, width);
     case Page::kMods: return BuildMods(ui, x, y, width);
     case Page::kShortcuts: return BuildShortcuts(ui, x, y, width);
+    case Page::kActivity: return BuildActivity(ui, x, y, width);
+    case Page::kShaders: return BuildShaders(ui, x, y, width);
   }
   return y;
 }

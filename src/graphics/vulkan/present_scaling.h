@@ -23,6 +23,8 @@ bool PresentStretchWanted();
 PresentStretch PresentStretchState();
 void NotePresentStretch(bool supported);
 void NotePresentStretchRefused();
+void SetOwnScaler(bool available);
+bool OwnScaler();
 void ResetPresentStretchForTest();
 
 const char* SwapchainMaintenanceExtension(const std::vector<std::string>& instance_extensions,

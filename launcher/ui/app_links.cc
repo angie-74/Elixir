@@ -119,6 +119,7 @@ void App::OnJoinEvent(const std::string& state) {
   } else if (state == "rejected") {
     ShowToast(T(L"Roblox couldn’t join that experience."));
   }
+  if (state == "in-game" || state == "left") RefreshActivity();
 }
 
 int App::FreeWindowNumber() {

@@ -1693,6 +1693,44 @@ bool RobloxExperienceComposition::DropGameRenderScale() {
   return true;
 }
 
+bool RobloxExperienceComposition::ChangeGameRenderScale(
+    const elixir::RenderScale& scale) {
+  std::lock_guard<std::mutex> operation_lock(surface_operation_mutex_);
+  std::shared_ptr<RobloxFreshGameLaunchController> controller;
+  GameSurface surface;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (launch_in_progress_ || active_launch_ != nullptr || !game_active_) {
+      return false;
+    }
+    controller = controller_;
+    surface = readiness_.surface;
+  }
+  if (controller == nullptr || surface.generation == 0 ||
+      surface.native_window == 0 || surface.width == 0 ||
+      surface.height == 0) {
+    return false;
+  }
+  const elixir::RenderScale wanted = elixir::Normalized(scale);
+  surface.render_scale = 1.0f;
+  surface.width_scale = 1.0f;
+  surface_config_.SetWindowScale(surface.native_window, wanted);
+  const GameSessionUpdateResult result = controller->RebindSurface(
+      ScaledGameSurface(surface, wanted, surface_config_.dpi_scale));
+  if (!result.ok()) {
+    elixir::RenderScale previous;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      previous = game_render_scale_;
+    }
+    surface_config_.SetWindowScale(surface.native_window, previous);
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  game_render_scale_ = wanted;
+  return true;
+}
+
 GameSessionUpdateResult RobloxExperienceComposition::SurfaceDestroyed(
     uint64_t generation) {
   std::lock_guard<std::mutex> operation_lock(surface_operation_mutex_);

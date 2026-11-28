@@ -18,7 +18,8 @@ void LoaderLogSink(int priority, const char* tag, const char* message) noexcept;
 unsigned long GuestLogLineCount();
 
 using GuestLineObserver = void (*)(void* context, const char* tag, std::string_view message);
-void SetGuestLineObserver(GuestLineObserver observer, void* context) noexcept;
+void AddGuestLineObserver(GuestLineObserver observer, void* context) noexcept;
+void RemoveGuestLineObserver(GuestLineObserver observer, void* context) noexcept;
 
 using EventSink = void (*)(void* context, unsigned kind, const char* json);
 void SetEventSink(EventSink sink, void* context) noexcept;

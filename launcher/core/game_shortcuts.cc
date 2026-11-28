@@ -196,6 +196,11 @@ bool FetchGameDetails(std::uint64_t place_id, const HttpGetFunction& get, GameDe
   found.universe_id = static_cast<std::uint64_t>(universe_id);
   found.name = TrimWide(Utf8ToWide(game->GetString("name")));
   if (found.name.empty()) return false;
+  found.description = Utf8ToWide(game->GetString("description"));
+  found.root_place_id = static_cast<std::uint64_t>(std::max<std::int64_t>(0, game->GetInt("rootPlaceId", 0)));
+  if (const Json* creator = game->Find("creator"); creator != nullptr && creator->is_object()) {
+    found.creator = TrimWide(Utf8ToWide(creator->GetString("name")));
+  }
   const std::optional<Json> icons =
       GetJson(get, L"https://thumbnails.roblox.com/v1/games/icons?universeIds=" + id +
                        L"&returnPolicy=PlaceHolder&size=256x256&format=Png&isCircular=false");

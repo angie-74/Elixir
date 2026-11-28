@@ -129,6 +129,8 @@ if(TARGET elixir_runtime_core)
     target_sources(elixir_runtime_core PRIVATE
       src/runtime/roblox_platform_web_symbols.cc
       src/elixir_runtime/experience_session.cc
+      src/elixir_runtime/activity_journal.cc
+      src/elixir_runtime/dynamic_resolution.cc
       src/elixir_runtime/discord_presence.cc)
     target_link_libraries(elixir_runtime_core PUBLIC elixir_roblox_experience elixir_discord_rpc)
     target_compile_definitions(elixir_runtime_core PRIVATE ELIXIR_RUNTIME_HAS_EXPERIENCE=1)
@@ -183,6 +185,8 @@ if(BUILD_TESTING)
     if(TARGET elixir_runtime_test)
       target_sources(elixir_runtime_test PRIVATE
         tests/windows/runtime/link_joins_test.cc
+        tests/windows/runtime/activity_journal_test.cc
+        tests/windows/runtime/dynamic_resolution_test.cc
         tests/windows/runtime/discord_presence_test.cc
         tests/windows/runtime/stall_profiler_test.cc)
     endif()

@@ -12,6 +12,7 @@ add_library(elixir_vulkan STATIC
   "${ELIXIR_VULKAN_SRC}/present_scaling.cc"
   "${ELIXIR_VULKAN_SRC}/etc2_decoder.cc"
   "${ELIXIR_VULKAN_SRC}/etc2_emulation.cc"
+  "${ELIXIR_VULKAN_SRC}/frame_chain.cc"
   "${ELIXIR_VULKAN_SRC}/texture_override.cc"
 )
 elixir_target(elixir_vulkan)

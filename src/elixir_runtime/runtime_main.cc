@@ -65,12 +65,16 @@
 #if defined(ELIXIR_RUNTIME_HAS_ANDROID)
 #include "android/android.h"
 #endif
+#if defined(ELIXIR_RUNTIME_HAS_SHADERS)
+#include "shaders/shader_chain.h"
+#endif
 
 #if defined(ELIXIR_RUNTIME_HAS_WINDOW)
 #include "elixir_runtime/game_session.h"
 #include "window/window.h"
 #endif
 #if defined(ELIXIR_RUNTIME_HAS_EXPERIENCE)
+#include "elixir_runtime/activity_journal.h"
 #include "elixir_runtime/discord_presence.h"
 #include "elixir_runtime/experience_session.h"
 #endif
@@ -780,9 +784,23 @@ int RunElixirRuntime(const std::vector<std::string>& arguments) {
   const RenderScale render_scale = Normalized(
       RenderScale{static_cast<float>(options.resolution_scale.value_or(config.launcher.resolution_scale)),
                   static_cast<float>(1.0 - options.stretch.value_or(config.launcher.stretch))});
-  const bool renders_smaller = render_scale.smaller() && !config.config.headless();
+  const int dynamic_resolution_fps =
+      options.dynamic_resolution.value_or(false) && options.upscale.value_or(false) ? options.target_fps.value_or(60) : 0;
+  const bool renders_smaller = (render_scale.smaller() || dynamic_resolution_fps > 0) && !config.config.headless();
 #if defined(ELIXIR_RUNTIME_HAS_VULKAN)
   vulkan::SetPresentStretchWanted(renders_smaller);
+#if defined(ELIXIR_RUNTIME_HAS_SHADERS)
+  std::unique_ptr<shaders::ShaderService> shader_service;
+  if (!config.config.headless() && (!options.shaders_dir.empty() || options.upscale.value_or(false))) {
+    shaders::ChainSettings chain;
+    if (!options.shaders_dir.empty()) chain.folder = Absolute(options.shaders_dir);
+    chain.upscale = options.upscale.value_or(false);
+    chain.sharpness = static_cast<float>(options.sharpness.value_or(0.5));
+    shader_service = std::make_unique<shaders::ShaderService>(std::move(chain),
+                                                              [](const std::string& line) { Log(line); });
+    shader_service->Start();
+  }
+#endif
 #endif
   if (renders_smaller && RendersSmaller(render_scale.size)) {
     Log("resolution scale: games render at " + std::to_string(static_cast<int>(render_scale.size * 100.0f + 0.5f)) +
@@ -826,7 +844,11 @@ int RunElixirRuntime(const std::vector<std::string>& arguments) {
   sign_in_options.accounts = std::make_shared<AccountBook>(
       options.accounts_dir.empty() ? paths.auth_root() / L"accounts" : Absolute(options.accounts_dir));
   const auto account_use = std::make_shared<AccountUse>();
-  sign_in_options.account_changed = [account_use](long long user_id) { account_use->SetAccount(user_id); };
+  const auto signed_in_user = std::make_shared<std::atomic<long long>>(0);
+  sign_in_options.account_changed = [account_use, signed_in_user](long long user_id) {
+    signed_in_user->store(user_id);
+    account_use->SetAccount(user_id);
+  };
   const std::unique_ptr<SignInIdentity> sign_in = SignInIdentity::Install(*java_vm, std::move(sign_in_options));
   KeptCookies::Options kept_cookie_options;
   kept_cookie_options.store = std::make_shared<RobloxSessionStore>(paths.auth_root() / L"roblox-cookies.dpapi",
@@ -957,6 +979,7 @@ int RunElixirRuntime(const std::vector<std::string>& arguments) {
   GameSession game;
 #if defined(ELIXIR_RUNTIME_HAS_EXPERIENCE)
   std::unique_ptr<DiscordPresence> discord;
+  std::unique_ptr<ActivityJournal> activity;
   if (!options.discord_app.empty() && !startup.headless) {
     DiscordPresenceOptions discord_options;
     discord_options.application_id = options.discord_app;
@@ -1018,11 +1041,21 @@ int RunElixirRuntime(const std::vector<std::string>& arguments) {
     experience_options.asset_folder_path = startup.asset_path;
     experience_options.dpi_scale = geometry.dpi_scale;
     experience_options.game_render_scale = renders_smaller ? render_scale : RenderScale{};
+    experience_options.dynamic_resolution_fps = renders_smaller ? dynamic_resolution_fps : 0;
     experience_options.touch_enabled = input.touch_enabled;
     experience_options.mouse_enabled = input.mouse_enabled;
     experience_options.keyboard_enabled = input.keyboard_enabled;
     experience_options.microphone_enabled = config.config.microphone_enabled();
     if (discord != nullptr) experience_options.presence = discord->observer();
+    if (!options.activity_dir.empty()) {
+      ActivityJournalOptions journal_options;
+      journal_options.folder = Absolute(options.activity_dir);
+      journal_options.next = experience_options.presence;
+      journal_options.user = [signed_in_user] { return signed_in_user->load(); };
+      activity = std::make_unique<ActivityJournal>(std::move(journal_options));
+      experience_options.presence = activity->observer();
+      Log("activity: the games you play are noted for the launcher's Activity page");
+    }
     experience_options.in_game_changed = [account_use](bool in_game) { account_use->SetInGame(in_game); };
     std::string experience_unavailable;
     experience = ExperienceSession::Create(handle, java_vm, experience_options, &experience_unavailable);
@@ -1103,6 +1136,7 @@ int RunElixirRuntime(const std::vector<std::string>& arguments) {
 #if defined(ELIXIR_RUNTIME_HAS_EXPERIENCE)
     game.AttachExperience(nullptr);
     experience.reset();
+    if (activity != nullptr) activity->Close();
     if (discord != nullptr) discord->Stop();
 #endif
     if (sign_in != nullptr) sign_in->Shutdown();

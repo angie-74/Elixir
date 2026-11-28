@@ -190,6 +190,35 @@ const std::vector<OptionSpec>& Options() {
       {"--mods-dir", true, [](LaunchOptions* o, const std::string& v) { return PathOption(&o->mods_dir, v); }},
       {"--accounts-dir", true,
        [](LaunchOptions* o, const std::string& v) { return PathOption(&o->accounts_dir, v); }},
+      {"--activity-dir", true,
+       [](LaunchOptions* o, const std::string& v) { return PathOption(&o->activity_dir, v); }},
+      {"--shaders-dir", true,
+       [](LaunchOptions* o, const std::string& v) { return PathOption(&o->shaders_dir, v); }},
+      {"--upscale", true, [](LaunchOptions* o, const std::string& v) { return OnOff(&o->upscale, v); }},
+      {"--dynamic-resolution", true,
+       [](LaunchOptions* o, const std::string& v) { return OnOff(&o->dynamic_resolution, v); }},
+      {"--sharpness", true,
+       [](LaunchOptions* o, const std::string& v) -> std::string {
+         errno = 0;
+         char* end = nullptr;
+         const double parsed = std::strtod(v.c_str(), &end);
+         if (v.empty() || end != v.c_str() + v.size() || errno != 0 || !(parsed >= 0.0 && parsed <= 1.0)) {
+           return "expected a sharpness from 0.00 to 1.00, got " + Quoted(v);
+         }
+         o->sharpness = parsed;
+         return {};
+       }},
+      {"--target-fps", true,
+       [](LaunchOptions* o, const std::string& v) -> std::string {
+         errno = 0;
+         char* end = nullptr;
+         const long parsed = std::strtol(v.c_str(), &end, 10);
+         if (v.empty() || end != v.c_str() + v.size() || errno != 0 || parsed < 20 || parsed > 480) {
+           return "expected a target frame rate from 20 to 480, got " + Quoted(v);
+         }
+         o->target_fps = static_cast<int>(parsed);
+         return {};
+       }},
       {"--controller", true, [](LaunchOptions* o, const std::string& v) { return OnOff(&o->controller, v); }},
       {"--user-fflags", true, [](LaunchOptions* o, const std::string& v) { return OnOff(&o->user_fflags, v); }},
       {"--discord", true,
@@ -372,12 +401,16 @@ std::string RuntimeUsage() {
            "  --user-fflags on|off        off: start Roblox with none of the Fast Flags file's flags\n"
            "  --instance <2-8>            one of several Roblox windows (its own --data-dir; title \"Elixir (n)\")\n"
            "  --accounts-dir <dir>        saved accounts shared by every Roblox window (default: auth\\accounts)\n"
+           "  --activity-dir <dir>        where the games you play are noted for the launcher (default: not noted)\n"
            "  --guest-runtime <dir>       Android-side runtime libraries (default: guest-runtime next to the exe)\n"
            "\n"
            "Settings (default: config.json):\n"
            "  --renderer vulkan  --present-mode fifo|mailbox|immediate  --frame-rate-cap <fps>\n"
            "  --resolution-scale <0.25-1.00>  --stretch <0.00-0.50>  --controller on|off\n"
            "  (no frame-rate cap or window mode: Roblox's own settings decide both)\n"
+           "  --shaders-dir <dir>         GLSL shaders drawn over the game (shaders.json says which are on)\n"
+           "  --upscale on|off  --sharpness <0.00-1.00>   Elixir's own upscaling of a smaller game picture\n"
+           "  --dynamic-resolution on|off  --target-fps <20-480>   lower the scale to hold a frame rate\n"
            "  --audio-device default|<endpoint id>\n"
            "  --audio-input-device default|disabled|<capture endpoint id>\n"
            "\n"
@@ -424,6 +457,16 @@ std::vector<std::string> FormatRuntimeArguments(const LaunchOptions& options) {
   if (!options.fflags_file.empty()) add("--fflags", NativeUtf8(options.fflags_file));
   if (!options.mods_dir.empty()) add("--mods-dir", NativeUtf8(options.mods_dir));
   if (!options.accounts_dir.empty()) add("--accounts-dir", NativeUtf8(options.accounts_dir));
+  if (!options.activity_dir.empty()) add("--activity-dir", NativeUtf8(options.activity_dir));
+  if (!options.shaders_dir.empty()) add("--shaders-dir", NativeUtf8(options.shaders_dir));
+  if (options.upscale) add("--upscale", *options.upscale ? "on" : "off");
+  if (options.sharpness) {
+    char sharpness[32];
+    std::snprintf(sharpness, sizeof(sharpness), "%.2f", *options.sharpness);
+    add("--sharpness", sharpness);
+  }
+  if (options.dynamic_resolution) add("--dynamic-resolution", *options.dynamic_resolution ? "on" : "off");
+  if (options.target_fps) add("--target-fps", std::to_string(*options.target_fps));
   if (!options.guest_runtime_dir.empty()) add("--guest-runtime", NativeUtf8(options.guest_runtime_dir));
   if (!options.renderer.empty()) add("--renderer", options.renderer);
   if (!options.present_mode.empty()) add("--present-mode", options.present_mode);

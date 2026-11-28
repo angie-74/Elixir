@@ -321,12 +321,12 @@ class DiscordPresence::Impl {
     if (worker_.joinable() || stop_ == nullptr || wake_ == nullptr) return;
     ResetEvent(stop_);
     worker_ = std::thread([this] { Run(); });
-    SetGuestLineObserver(&Impl::GuestLine, this);
+    AddGuestLineObserver(&Impl::GuestLine, this);
   }
 
   void Stop() {
     if (!worker_.joinable()) return;
-    SetGuestLineObserver(nullptr, nullptr);
+    RemoveGuestLineObserver(&Impl::GuestLine, this);
     SetEvent(stop_);
     worker_.join();
   }

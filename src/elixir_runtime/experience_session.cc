@@ -23,6 +23,7 @@
 #include "mocktail/status.h"
 #include "runtime/auth_runtime_composition.h"
 #include "runtime/external_launch_broker.h"
+#include "elixir_runtime/dynamic_resolution.h"
 #include "graphics/render_scale.h"
 #include "runtime/jnivm_platform_web_callbacks.h"
 #include "runtime/roblox_capability_resolver.h"
@@ -37,6 +38,7 @@
 #include "android/android.h"
 #endif
 #if defined(ELIXIR_RUNTIME_HAS_VULKAN)
+#include "graphics/vulkan/guest_vulkan.h"
 #include "graphics/vulkan/present_scaling.h"
 #endif
 
@@ -46,6 +48,8 @@ namespace {
 struct GameScaling {
   RenderScale wanted;
   bool applied = false;
+  bool dynamic = false;
+  unsigned launches = 0;
 };
 
 std::string DescribeScale(const RenderScale& scale) {
@@ -62,12 +66,13 @@ std::string DescribeScale(const RenderScale& scale) {
 
 RenderScale GameRenderScaleForLaunch(void* context) {
   auto* scaling = static_cast<GameScaling*>(context);
-  if (scaling == nullptr || !scaling->wanted.smaller()) return {};
+  if (scaling == nullptr || (!scaling->wanted.smaller() && !scaling->dynamic)) return {};
 #if defined(ELIXIR_RUNTIME_HAS_VULKAN) && defined(ELIXIR_RUNTIME_HAS_ANDROID)
   if (vulkan::PresentStretchState() == vulkan::PresentStretch::kSupported) {
     Log("[experience] resolution scale: this game renders at " + DescribeScale(scaling->wanted) +
         " and the graphics driver stretches it");
     scaling->applied = true;
+    ++scaling->launches;
     mocktail::platform::SurfaceHorizontalScale().store(scaling->wanted.stretch(), std::memory_order_relaxed);
     return scaling->wanted;
   }
@@ -82,6 +87,15 @@ void BindSurfaceRenderScale(void*, jobject surface, RenderScale render_scale) {
   android::SetSurfaceRenderScale(surface, render_scale);
 #else
   static_cast<void>(surface);
+  static_cast<void>(render_scale);
+#endif
+}
+
+void SetWindowRenderScale(void*, std::uintptr_t native_window, RenderScale render_scale) {
+#if defined(ELIXIR_RUNTIME_HAS_ANDROID)
+  android::SetNativeWindowRenderScale(reinterpret_cast<ANativeWindow*>(native_window), render_scale);
+#else
+  static_cast<void>(native_window);
   static_cast<void>(render_scale);
 #endif
 }
@@ -236,6 +250,11 @@ struct ExperienceSession::Impl {
   jnivm::VM* vm = nullptr;
   mw::ScopedPresentObserver present_observer;
   GameScaling scaling;
+  int dynamic_fps = 0;
+  std::unique_ptr<DynamicResolution> dynamic;
+  unsigned dynamic_launch = 0;
+  ULONGLONG dynamic_checked = 0;
+  std::uint64_t dynamic_frames = 0;
   PresenceState presence;
   std::uint64_t presence_reported = 0;
   std::function<void(bool)> in_game_changed;
@@ -323,6 +342,9 @@ std::unique_ptr<ExperienceSession> ExperienceSession::Create(void* roblox, jnivm
   surface_config.game_render_scale = &GameRenderScaleForLaunch;
   surface_config.bind_surface_scale = &BindSurfaceRenderScale;
   surface_config.reset_surface_scales = &ResetSurfaceRenderScales;
+  surface_config.set_window_scale = &SetWindowRenderScale;
+  impl->scaling.dynamic = options.dynamic_resolution_fps > 0;
+  impl->dynamic_fps = options.dynamic_resolution_fps;
   if (!surface_config.complete()) return fail("the game surface's PlatformParams are incomplete (no asset path)");
   const mr::JniEnvironmentProvider environment{vm->GetJavaVM(), vm, &RestoreJniFunctions};
   mr::SecureRobloxCredential web_credential;
@@ -435,6 +457,34 @@ bool ExperienceSession::DrainPlatformEvents() {
     s.scaling.applied = false;
     Log("[experience] resolution scale: the graphics driver did not take the smaller picture, so this game "
         "renders at the window's size");
+  }
+  if (s.dynamic_fps > 0 && s.scaling.applied) {
+    if (s.dynamic == nullptr || s.dynamic_launch != s.scaling.launches) {
+      s.dynamic = std::make_unique<DynamicResolution>(s.dynamic_fps, s.scaling.wanted.size);
+      s.dynamic_launch = s.scaling.launches;
+      s.dynamic_checked = 0;
+    }
+    const ULONGLONG now = GetTickCount64();
+    const std::uint64_t frames = vulkan::PresentedFrameCount();
+    if (s.dynamic_checked == 0) {
+      s.dynamic_checked = now;
+      s.dynamic_frames = frames;
+    } else if (now - s.dynamic_checked >= 1000) {
+      const double rate = static_cast<double>(frames - s.dynamic_frames) * 1000.0 /
+                          static_cast<double>(now - s.dynamic_checked);
+      s.dynamic_checked = now;
+      s.dynamic_frames = frames;
+      const double before = s.dynamic->scale();
+      if (s.dynamic->Update(rate)) {
+        RenderScale next = s.scaling.wanted;
+        next.size = static_cast<float>(s.dynamic->scale());
+        const bool changed = s.composition->ChangeGameRenderScale(next);
+        Log("[experience] dynamic resolution: " + std::to_string(static_cast<int>(rate + 0.5)) + " FPS against a target of " +
+            std::to_string(s.dynamic_fps) + ", so the game renders at " +
+            std::to_string(static_cast<int>(s.dynamic->scale() * 100.0 + 0.5)) + "% instead of " +
+            std::to_string(static_cast<int>(before * 100.0 + 0.5)) + "%" + (changed ? "" : " (not applied this time)"));
+      }
+    }
   }
 #endif
   const mocktail::Status status = s.composition->DrainPlatformEvents();

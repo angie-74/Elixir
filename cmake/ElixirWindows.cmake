@@ -144,6 +144,11 @@ if(ELIXIR_WITH_VULKAN)
   include(${CMAKE_SOURCE_DIR}/cmake/ElixirVulkan.cmake OPTIONAL)
 endif()
 
+option(ELIXIR_WITH_SHADERS "Build the GLSL compiler for shaders and upscaling" ON)
+if(ELIXIR_WITH_VULKAN AND ELIXIR_WITH_SHADERS)
+  include(${CMAKE_SOURCE_DIR}/cmake/ElixirShaders.cmake)
+endif()
+
 if(ELIXIR_WITH_APK)
   include(${CMAKE_SOURCE_DIR}/cmake/ElixirApk.cmake OPTIONAL)
 endif()

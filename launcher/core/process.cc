@@ -267,6 +267,8 @@ std::vector<std::wstring> BuildRuntimeArguments(const LauncherConfig& config, co
   const auto on_off = [](bool value) { return std::wstring(value ? L"on" : L"off"); };
   wchar_t scale[32];
   std::swprintf(scale, 32, L"%.2f", ResolutionScaleOrDefault(config.graphics.resolution_scale));
+  wchar_t sharpness[32];
+  std::swprintf(sharpness, 32, L"%.2f", std::min(std::max(config.graphics.sharpness, 0.0), 1.0));
   wchar_t stretch[32];
   std::swprintf(stretch, 32, L"%.2f", StretchOrDefault(config.graphics.stretch));
   std::vector<std::wstring> args;
@@ -288,6 +290,16 @@ std::vector<std::wstring> BuildRuntimeArguments(const LauncherConfig& config, co
                L"--timer-resolution-1ms", on_off(config.performance.timer_resolution_1ms),
                L"--mmcss", on_off(config.performance.mmcss)});
   if (!paths.accounts_dir.empty()) args.insert(args.end(), {L"--accounts-dir", paths.accounts_dir});
+  args.insert(args.end(), {L"--upscale", on_off(config.graphics.upscaling), L"--sharpness", sharpness});
+  if (config.graphics.upscaling && config.graphics.dynamic_resolution) {
+    args.insert(args.end(), {L"--dynamic-resolution", L"on", L"--target-fps",
+                             std::to_wstring(std::min(std::max(config.graphics.target_fps, kTargetFpsMin),
+                                                      kTargetFpsMax))});
+  }
+  if (!paths.shaders_dir.empty()) args.insert(args.end(), {L"--shaders-dir", paths.shaders_dir});
+  if (config.integrations.activity_history && !paths.activity_dir.empty()) {
+    args.insert(args.end(), {L"--activity-dir", paths.activity_dir});
+  }
   if (!config.audio.input_device_id.empty()) {
     const std::string& id = config.audio.input_device_id;
     const bool valid = id.size() <= 512 && std::none_of(id.begin(), id.end(), [](unsigned char c) {

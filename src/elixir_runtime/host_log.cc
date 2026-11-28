@@ -244,15 +244,32 @@ void ResetConnectionDiagnostics() noexcept {
 }
 
 namespace {
+struct LineObserver {
+  GuestLineObserver observer = nullptr;
+  void* context = nullptr;
+};
 SRWLOCK g_observer_lock = SRWLOCK_INIT;
-GuestLineObserver g_line_observer = nullptr;
-void* g_line_context = nullptr;
+LineObserver g_line_observers[4];
 }
 
-void SetGuestLineObserver(GuestLineObserver observer, void* context) noexcept {
+void AddGuestLineObserver(GuestLineObserver observer, void* context) noexcept {
+  if (observer == nullptr) return;
   AcquireSRWLockExclusive(&g_observer_lock);
-  g_line_observer = observer;
-  g_line_context = context;
+  for (LineObserver& slot : g_line_observers) {
+    if (slot.observer == nullptr) {
+      slot.observer = observer;
+      slot.context = context;
+      break;
+    }
+  }
+  ReleaseSRWLockExclusive(&g_observer_lock);
+}
+
+void RemoveGuestLineObserver(GuestLineObserver observer, void* context) noexcept {
+  AcquireSRWLockExclusive(&g_observer_lock);
+  for (LineObserver& slot : g_line_observers) {
+    if (slot.observer == observer && slot.context == context) slot = LineObserver{};
+  }
   ReleaseSRWLockExclusive(&g_observer_lock);
 }
 
@@ -265,7 +282,9 @@ void GuestLogSink(int priority, const char* tag, const char* message) noexcept {
   Emit(prefix, text);
   ObserveConnectionLog(safe_tag, text);
   AcquireSRWLockShared(&g_observer_lock);
-  if (g_line_observer != nullptr) g_line_observer(g_line_context, safe_tag.data(), text);
+  for (const LineObserver& slot : g_line_observers) {
+    if (slot.observer != nullptr) slot.observer(slot.context, safe_tag.data(), text);
+  }
   ReleaseSRWLockShared(&g_observer_lock);
 }
 

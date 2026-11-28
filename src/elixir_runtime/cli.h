@@ -46,6 +46,12 @@ struct LaunchOptions {
   std::filesystem::path fflags_file;
   std::filesystem::path mods_dir;
   std::filesystem::path accounts_dir;
+  std::filesystem::path activity_dir;
+  std::filesystem::path shaders_dir;
+  std::optional<bool> upscale;
+  std::optional<double> sharpness;
+  std::optional<bool> dynamic_resolution;
+  std::optional<int> target_fps;
   std::optional<bool> user_fflags;
   std::string discord_app;
   std::optional<bool> discord_game;

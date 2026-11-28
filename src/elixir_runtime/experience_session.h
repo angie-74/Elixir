@@ -23,6 +23,7 @@ struct ExperienceSessionOptions {
   std::string asset_folder_path;
   float dpi_scale = 1.0f;
   RenderScale game_render_scale;
+  int dynamic_resolution_fps = 0;
   bool touch_enabled = false;
   bool mouse_enabled = true;
   bool keyboard_enabled = true;

@@ -9,6 +9,9 @@ set(_elixir_launcher_tests "${ELIXIR_LAUNCHER_ROOT}/tests/windows/launcher")
 
 add_library(elixir_launcher_core STATIC
   ${ELIXIR_LAUNCHER_DIR}/core/accounts.cc
+  ${ELIXIR_LAUNCHER_DIR}/core/activity.cc
+  ${ELIXIR_LAUNCHER_DIR}/core/default_shaders.cc
+  ${ELIXIR_LAUNCHER_DIR}/core/shaders.cc
   ${ELIXIR_LAUNCHER_DIR}/core/apk_component.cc
   ${ELIXIR_LAUNCHER_DIR}/core/audio_devices.cc
   ${ELIXIR_LAUNCHER_DIR}/core/bundle.cc
@@ -47,7 +50,7 @@ target_include_directories(elixir_launcher_core
 target_link_libraries(elixir_launcher_core PUBLIC
   bcrypt winhttp dxgi ole32 oleaut32 shell32 shlwapi advapi32 propsys uuid xmllite windowscodecs version)
 include(${ELIXIR_LAUNCHER_ROOT}/cmake/ElixirLaunchLink.cmake)
-target_link_libraries(elixir_launcher_core PUBLIC elixir_roblox_launch_link)
+target_link_libraries(elixir_launcher_core PUBLIC elixir_roblox_launch_link elixir_shaders)
 if(BUILD_TESTING)
   target_compile_definitions(elixir_launcher_core PRIVATE ELIXIR_SOURCE_DIR="${ELIXIR_LAUNCHER_ROOT}")
 endif()
@@ -89,6 +92,8 @@ if(EXISTS "${ELIXIR_LAUNCHER_DIR}/ui/app.cc")
   ${ELIXIR_LAUNCHER_DIR}/ui/launch_progress.cc
     ${ELIXIR_LAUNCHER_DIR}/ui/pages.cc
     ${ELIXIR_LAUNCHER_DIR}/ui/pages_extras.cc
+    ${ELIXIR_LAUNCHER_DIR}/ui/pages_activity.cc
+    ${ELIXIR_LAUNCHER_DIR}/ui/pages_shaders.cc
     ${ELIXIR_LAUNCHER_DIR}/ui/pages_roblox.cc
     ${ELIXIR_LAUNCHER_DIR}/ui/lucide.cc
     ${ELIXIR_LAUNCHER_DIR}/ui/renderer.cc
@@ -178,6 +183,8 @@ endif()
 if(BUILD_TESTING)
   elixir_gtest(elixir_launcher_core_test
     ${_elixir_launcher_tests}/accounts_test.cc
+    ${_elixir_launcher_tests}/activity_test.cc
+    ${_elixir_launcher_tests}/shaders_test.cc
     ${_elixir_launcher_tests}/core_test.cc
     ${_elixir_launcher_tests}/update_test.cc
     ${_elixir_launcher_tests}/diagnostics_test.cc
@@ -200,6 +207,9 @@ if(BUILD_TESTING)
   endif()
   find_package(Python3 COMPONENTS Interpreter QUIET)
   if(Python3_Interpreter_FOUND)
+    add_test(NAME elixir_default_shaders_up_to_date
+      COMMAND "${Python3_EXECUTABLE}" "${ELIXIR_LAUNCHER_ROOT}/tools/gen_default_shaders.py" --check
+      WORKING_DIRECTORY "${ELIXIR_LAUNCHER_ROOT}")
     add_test(NAME elixir_locales_up_to_date
       COMMAND "${Python3_EXECUTABLE}" "${ELIXIR_LAUNCHER_ROOT}/tools/gen_locales.py" --check --complete
       WORKING_DIRECTORY "${ELIXIR_LAUNCHER_ROOT}")

@@ -126,6 +126,11 @@ Json ConfigToJson(const LauncherConfig& config) {
   graphics.Set("present_mode", ToString(config.graphics.present_mode));
   graphics.Set("resolution_scale", ResolutionScaleOrDefault(config.graphics.resolution_scale));
   graphics.Set("stretch", StretchOrDefault(config.graphics.stretch));
+  graphics.Set("upscaling", config.graphics.upscaling);
+  graphics.Set("sharpness", std::min(std::max(config.graphics.sharpness, 0.0), 1.0));
+  graphics.Set("dynamic_resolution", config.graphics.dynamic_resolution);
+  graphics.Set("target_fps", static_cast<std::int64_t>(
+                                 std::min(std::max(config.graphics.target_fps, kTargetFpsMin), kTargetFpsMax)));
 
   Json& performance = root.Set("performance", Json::MakeObject());
   performance.Set("high_priority", config.performance.high_priority);
@@ -152,6 +157,7 @@ Json ConfigToJson(const LauncherConfig& config) {
   integrations.Set("discord_join_button", config.integrations.discord_join_button);
   integrations.Set("discord_allow_game_presence", config.integrations.discord_allow_game_presence);
   integrations.Set("server_location", config.integrations.server_location);
+  integrations.Set("activity_history", config.integrations.activity_history);
   Json& mods = root.Set("mods", Json::MakeObject());
   mods.Set("enabled", config.mods.enabled);
 
@@ -234,6 +240,24 @@ LauncherConfig ConfigFromJson(const Json& json, std::vector<std::string>* warnin
         config.graphics.stretch = std::round(value * 100.0) / 100.0;
       }
     }
+    reader.Bool(graphics, "graphics", "upscaling", &config.graphics.upscaling);
+    if (const Json* sharpness = graphics->Find("sharpness")) {
+      const double value = sharpness->AsDouble(-1.0);
+      if (value < 0.0 || value > 1.0) {
+        reader.Warn("graphics.sharpness must be between 0 and 1; using 0.5");
+      } else {
+        config.graphics.sharpness = std::round(value * 100.0) / 100.0;
+      }
+    }
+    reader.Bool(graphics, "graphics", "dynamic_resolution", &config.graphics.dynamic_resolution);
+    if (const Json* target = graphics->Find("target_fps")) {
+      const std::int64_t value = target->AsInt(0);
+      if (value < kTargetFpsMin || value > kTargetFpsMax) {
+        reader.Warn("graphics.target_fps must be between 30 and 240; using 60");
+      } else {
+        config.graphics.target_fps = static_cast<int>(value);
+      }
+    }
   }
 
   if (const Json* performance = reader.Section("performance")) {
@@ -267,6 +291,7 @@ LauncherConfig ConfigFromJson(const Json& json, std::vector<std::string>* warnin
     reader.Bool(integrations, "integrations", "discord_join_button", &out.discord_join_button);
     reader.Bool(integrations, "integrations", "discord_allow_game_presence", &out.discord_allow_game_presence);
     reader.Bool(integrations, "integrations", "server_location", &out.server_location);
+    reader.Bool(integrations, "integrations", "activity_history", &out.activity_history);
   }
   if (const Json* mods = reader.Section("mods")) {
     reader.Bool(mods, "mods", "enabled", &config.mods.enabled);

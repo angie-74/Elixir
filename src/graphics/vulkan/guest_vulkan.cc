@@ -18,6 +18,7 @@
 #include "graphics/vulkan/device_order.h"
 #include "graphics/vulkan/etc2_emulation.h"
 #include "graphics/vulkan/extension_policy.h"
+#include "graphics/vulkan/frame_chain.h"
 #include "graphics/vulkan/generated/vk_sysv_thunks.h"
 #include "graphics/vulkan/present_policy.h"
 #include "graphics/vulkan/present_scaling.h"
@@ -1161,6 +1162,12 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkCreateDevice(VkPhysicalDevice physica
     device_proc_addr = reinterpret_cast<PFN_vkGetDeviceProcAddr>(state.trampolines[gen::kCmd_vkGetDeviceProcAddr]);
   }
   vk::Etc2Emulation().RegisterDevice(*pDevice, physicalDevice, etc2_emulated, memory_properties, device_proc_addr);
+  VkPhysicalDeviceProperties device_properties{};
+  if (const auto properties_query = ELIXIR_VK_HOST(vkGetPhysicalDeviceProperties)) {
+    properties_query(physicalDevice, &device_properties);
+  }
+  vk::Chains().RegisterDevice(*pDevice, physicalDevice, memory_properties, device_proc_addr,
+                              device_properties.limits.timestampPeriod);
 
   State& state = GetState();
   std::lock_guard<std::mutex> lock(state.mutex);
@@ -1191,6 +1198,7 @@ ELIXIR_SYSV void elixir_vk_intercept_vkDestroyDevice(VkDevice device,
     }
     vk::RespecializeLocked(state);
   }
+  vk::Chains().DestroyDevice(device);
   vk::Etc2Emulation().DestroyDevice(device);
   if (destroy != nullptr) destroy(device, nullptr);
 }
@@ -1295,7 +1303,10 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkGetPhysicalDeviceSurfaceCapabilitiesK
   const auto query = ELIXIR_VK_HOST(vkGetPhysicalDeviceSurfaceCapabilitiesKHR);
   if (query == nullptr) return VK_ERROR_INITIALIZATION_FAILED;
   const VkResult result = query(physicalDevice, surface, pSurfaceCapabilities);
-  if (result == VK_SUCCESS) vk::ScaleSurfaceCapabilitiesForGuest(surface, pSurfaceCapabilities);
+  if (result == VK_SUCCESS) {
+    vk::ScaleSurfaceCapabilitiesForGuest(surface, pSurfaceCapabilities);
+    vk::NudgeSurfaceCapabilities(pSurfaceCapabilities);
+  }
   return result;
 }
 
@@ -1307,6 +1318,7 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkGetPhysicalDeviceSurfaceCapabilities2
   const VkResult result = query(physicalDevice, pSurfaceInfo, pSurfaceCapabilities);
   if (result == VK_SUCCESS && pSurfaceInfo != nullptr && pSurfaceCapabilities != nullptr) {
     vk::ScaleSurfaceCapabilitiesForGuest(pSurfaceInfo->surface, &pSurfaceCapabilities->surfaceCapabilities);
+    vk::NudgeSurfaceCapabilities(&pSurfaceCapabilities->surfaceCapabilities);
   }
   return result;
 }
@@ -1331,6 +1343,7 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkCreateSwapchainKHR(VkDevice device,
                                                               VkSwapchainKHR* pSwapchain) {
   const auto create = ELIXIR_VK_HOST(vkCreateSwapchainKHR);
   if (create == nullptr || pCreateInfo == nullptr) return VK_ERROR_INITIALIZATION_FAILED;
+  static_cast<void>(vk::TakeSwapchainRebuildRequest());
   VkSwapchainCreateInfoKHR host_info = *pCreateInfo;
   VkPhysicalDevice physical_device = VK_NULL_HANDLE;
   bool surface_maintenance = false;
@@ -1362,6 +1375,39 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkCreateSwapchainKHR(VkDevice device,
       Log("vkCreateSwapchainKHR: present policy query failed (%d); using the guest's request",
           static_cast<int>(policy));
       host_info = *pCreateInfo;
+    }
+  }
+  if (physical_device != VK_NULL_HANDLE) {
+    VkSurfaceCapabilitiesKHR surface_capabilities{};
+    const auto surface_query = ELIXIR_VK_HOST(vkGetPhysicalDeviceSurfaceCapabilitiesKHR);
+    if (surface_query != nullptr &&
+        surface_query(physical_device, host_info.surface, &surface_capabilities) == VK_SUCCESS &&
+        surface_capabilities.currentExtent.width != UINT32_MAX &&
+        vk::FrameChainWantedFor(pCreateInfo->imageExtent, surface_capabilities.currentExtent)) {
+      vk::ChainCreateRequest request;
+      request.device = device;
+      request.guest = pCreateInfo;
+      request.host = host_info;
+      request.window_extent = surface_capabilities.currentExtent;
+      request.create = create;
+      VkSurfaceFullScreenExclusiveInfoEXT chain_exclusive{};
+      if (exclusive_fullscreen_control &&
+          vk::FindInChain(host_info.pNext, VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_INFO_EXT) == nullptr) {
+        chain_exclusive.sType = VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_INFO_EXT;
+        chain_exclusive.pNext = const_cast<void*>(host_info.pNext);
+        chain_exclusive.fullScreenExclusive = VK_FULL_SCREEN_EXCLUSIVE_DISALLOWED_EXT;
+        request.host.pNext = &chain_exclusive;
+      }
+      VkResult chained = VK_SUCCESS;
+      if (vk::Chains().CreateSwapchain(request, pSwapchain, &chained)) {
+        Log("swapchain %ux%u for the window's %ux%u, %u images, present mode %s, format %d: Elixir's shader "
+            "passes draw it to the window",
+            pCreateInfo->imageExtent.width, pCreateInfo->imageExtent.height,
+            surface_capabilities.currentExtent.width, surface_capabilities.currentExtent.height,
+            host_info.minImageCount, vk::PresentModeKhrName(host_info.presentMode),
+            static_cast<int>(host_info.imageFormat));
+        return chained;
+      }
     }
   }
   VkSwapchainPresentScalingCreateInfoKHR scaling{};
@@ -1448,7 +1494,10 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkQueuePresentKHR(VkQueue queue,
   const auto present = ELIXIR_VK_HOST(vkQueuePresentKHR);
   if (present == nullptr) return VK_ERROR_INITIALIZATION_FAILED;
   const elixir::platform::GuestThreadResume resume;
-  const VkResult result = present(queue, pPresentInfo);
+  VkResult result = VK_SUCCESS;
+  if (!vk::FrameChainsLive() || !vk::Chains().Present(queue, pPresentInfo, present, &result)) {
+    result = present(queue, pPresentInfo);
+  }
   const elixir::vulkan::PresentHook hook = g_present_hook.load(std::memory_order_acquire);
   if (pPresentInfo != nullptr && pPresentInfo->pResults != nullptr) {
     for (uint32_t i = 0; i < pPresentInfo->swapchainCount; ++i) {
@@ -1937,6 +1986,41 @@ ELIXIR_SYSV void elixir_vk_intercept_vkGetDeviceImageSubresourceLayoutKHR(VkDevi
     return;
   }
   host(device, pInfo, pLayout);
+}
+
+ELIXIR_SYSV VkResult elixir_vk_intercept_vkGetSwapchainImagesKHR(VkDevice device, VkSwapchainKHR swapchain,
+                                                                 uint32_t* pSwapchainImageCount,
+                                                                 VkImage* pSwapchainImages) {
+  const auto host = ELIXIR_VK_HOST(vkGetSwapchainImagesKHR);
+  if (host == nullptr) return VK_ERROR_INITIALIZATION_FAILED;
+  VkResult result = VK_SUCCESS;
+  if (vk::FrameChainsLive() &&
+      vk::Chains().GetImages(swapchain, pSwapchainImageCount, pSwapchainImages, &result)) {
+    return result;
+  }
+  return host(device, swapchain, pSwapchainImageCount, pSwapchainImages);
+}
+
+ELIXIR_SYSV void elixir_vk_intercept_vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain,
+                                                           const VkAllocationCallbacks* ) {
+  if (vk::FrameChainsLive()) vk::Chains().DestroySwapchain(swapchain);
+  if (const auto host = ELIXIR_VK_HOST(vkDestroySwapchainKHR)) host(device, swapchain, nullptr);
+}
+
+ELIXIR_SYSV void elixir_vk_intercept_vkGetDeviceQueue(VkDevice device, uint32_t queueFamilyIndex,
+                                                      uint32_t queueIndex, VkQueue* pQueue) {
+  const auto host = ELIXIR_VK_HOST(vkGetDeviceQueue);
+  if (host == nullptr || pQueue == nullptr) return;
+  host(device, queueFamilyIndex, queueIndex, pQueue);
+  vk::Chains().NoteQueue(device, *pQueue, queueFamilyIndex);
+}
+
+ELIXIR_SYSV void elixir_vk_intercept_vkGetDeviceQueue2(VkDevice device, const VkDeviceQueueInfo2* pQueueInfo,
+                                                       VkQueue* pQueue) {
+  const auto host = ELIXIR_VK_HOST(vkGetDeviceQueue2);
+  if (host == nullptr || pQueue == nullptr || pQueueInfo == nullptr) return;
+  host(device, pQueueInfo, pQueue);
+  vk::Chains().NoteQueue(device, *pQueue, pQueueInfo->queueFamilyIndex);
 }
 
 }
