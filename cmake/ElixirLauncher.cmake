@@ -83,6 +83,8 @@ endif()
 if(EXISTS "${ELIXIR_LAUNCHER_DIR}/ui/app.cc")
   add_library(elixir_launcher_ui STATIC
     ${ELIXIR_LAUNCHER_DIR}/ui/accessibility.cc
+    ${ELIXIR_LAUNCHER_DIR}/ui/account_list.cc
+    ${ELIXIR_LAUNCHER_DIR}/ui/account_picker.cc
     ${ELIXIR_LAUNCHER_DIR}/ui/app.cc
     ${ELIXIR_LAUNCHER_DIR}/ui/app_extras.cc
     ${ELIXIR_LAUNCHER_DIR}/ui/app_links.cc

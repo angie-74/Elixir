@@ -373,113 +373,30 @@ void App::BuildBottomBar(Ui& ui, float width, float height) {
 }
 
 void App::BuildInstanceAccountMenu(Ui& ui, const D2D1_RECT_F& button) {
-  constexpr float kRowHeight = 52.0f;
-  constexpr float kLastRowHeight = 40.0f;
-  constexpr float kPadding = 4.0f;
-  constexpr float kPicture = 36.0f;
-  constexpr float kTextLeft = 10.0f + kPicture + 12.0f;
-  constexpr float kRemoveSpace = 40.0f;
   const std::wstring control = menu_control_;
-  const int count = static_cast<int>(instance_accounts_.size());
-  constexpr float kStateGap = 7.0f;
-  constexpr float kSmallestText = 0.72f;
-  const auto detail_of = [](const InstanceAccountRow& row) {
-    std::wstring detail = L"@" + row.account.username;
-    if (row.use == AccountUse::kInGame) detail += L"  \u00B7  " + T(L"In game");
-    if (row.use == AccountUse::kOpen) detail += L"  \u00B7  " + T(L"Open##account");
-    return detail;
-  };
-  const auto state_of = [](const InstanceAccountRow& row) {
-    return row.use == AccountUse::kInGame ? T(L"In game")
-                                          : row.use == AccountUse::kOpen ? T(L"Open##account") : T(L"");
-  };
-  const auto detail_width = [&](const InstanceAccountRow& row) {
-    const std::wstring handle = L"@" + row.account.username;
-    if (row.use == AccountUse::kNotOpen) return ui.TextWidth(handle, TextStyle::kCaption);
-    return ui.TextWidth(handle + L"  \u00B7", TextStyle::kCaption) + kStateGap +
-           ui.TextWidth(state_of(row), TextStyle::kCaption);
-  };
-  float widest = ui.TextWidth(T(L"Add account"), TextStyle::kBody);
-  for (const InstanceAccountRow& row : instance_accounts_) {
-    widest = std::max(widest, ui.TextWidth(SavedAccountName(row.account), TextStyle::kBody));
-    widest = std::max(widest, detail_width(row));
+  const float needed = AccountListHeight(instance_accounts_.size());
+  const float menu_width = AccountListWidth(ui, instance_accounts_);
+  const float bottom = std::min(button.top - kAccountListGap, viewport_.bottom);
+  const float top = std::max(viewport_.top + kAccountListGap, bottom - needed);
+  const float visible = std::min(needed, std::max(bottom - top, AccountListHeight(1)));
+  const D2D1_RECT_F panel = D2D1::RectF(button.right - menu_width, top, button.right, top + visible);
+  if (ui.painting()) {
+    menu_max_scroll_ = std::max(0.0f, needed - visible);
+    menu_scroll_ = std::clamp(menu_scroll_, 0.0f, menu_max_scroll_);
+    if (menu_reveal_) {
+      menu_reveal_ = false;
+      menu_scroll_ = AccountListReveal(menu_focus_, instance_accounts_.size(), menu_scroll_, visible);
+    }
   }
-  widest += 2.0f;
-  const float menu_width = std::clamp(widest + kTextLeft + kRemoveSpace + 2.0f * kPadding, 260.0f, 420.0f);
-  const float menu_height = kRowHeight * static_cast<float>(count) + kLastRowHeight + 2.0f * kPadding;
-  const float bottom = std::min(button.top - kPadding, viewport_.bottom);
-  const float top = std::max(viewport_.top + kPadding, bottom - menu_height);
-  const D2D1_RECT_F panel = D2D1::RectF(button.right - menu_width, top, button.right, top + menu_height);
   const float menu_shown = ui.Animate(L"menu:" + control, 1.0f, theme::kPopupMs, 0.0f);
   ui.PushLayer(menu_shown, (1.0f - menu_shown) * theme::kMenuSlide);
-  ui.Fill(panel, theme::kDialog, theme::kControlRadius);
-  ui.Stroke(panel, theme::kControlBorder, theme::kControlRadius);
-  for (int i = 0; i < count; ++i) {
-    const InstanceAccountRow& row = instance_accounts_[static_cast<std::size_t>(i)];
-    const float row_top = top + kPadding + static_cast<float>(i) * kRowHeight;
-    const D2D1_RECT_F rect = D2D1::RectF(panel.left + kPadding, row_top, panel.right - kPadding, row_top + kRowHeight);
-    const std::wstring name = SavedAccountName(row.account);
-    const std::wstring detail = detail_of(row);
-    if (ui.MenuRow(control + L"#" + std::to_wstring(i), rect, name + L", " + detail)) {
-      Defer([this, i] { StartInstanceWith(i); });
-    }
-    const float center = (rect.top + rect.bottom) / 2.0f;
-    const D2D1_RECT_F picture = D2D1::RectF(rect.left + 10.0f, center - kPicture / 2.0f, rect.left + 10.0f + kPicture,
-                                            center + kPicture / 2.0f);
-    ui.Fill(picture, theme::White(0.08f), kPicture / 2.0f);
-    const bool row_is_new = ui.Animate(L"account.row:" + row.account.id, 1.0f, 1.0f, 0.0f) < 1.0f;
-    const float pictured =
-        row.account.picture_file.empty() ? 0.0f : ui.Image(picture, row.account.picture_file, !row_is_new);
-    if (pictured < 1.0f || !ui.painting()) {
-      D2D1_COLOR_F initial = theme::kTextSecondary;
-      initial.a *= 1.0f - pictured;
-      ui.TextLine(picture, name.substr(0, 1), TextStyle::kBodyStrong, initial, Align::kCenter);
-    }
-    const float text_left = rect.left + kTextLeft;
-    const float text_right = rect.right - kRemoveSpace;
-    ui.TextLine(D2D1::RectF(text_left, rect.top + 7.0f, text_right, rect.top + 28.0f), name, TextStyle::kBody,
-                theme::kText, Align::kLeading, kSmallestText);
-    const std::wstring handle = L"@" + row.account.username;
-    const D2D1_RECT_F detail_rect = D2D1::RectF(text_left, rect.top + 27.0f, text_right, rect.bottom - 7.0f);
-    if (row.use == AccountUse::kNotOpen) {
-      ui.TextLine(detail_rect, handle, TextStyle::kCaption, theme::kTextSecondary, Align::kLeading, kSmallestText);
-    } else {
-      const std::wstring before = handle + L"  ·";
-      const std::wstring state = state_of(row);
-      const float before_width = ui.TextWidth(before, TextStyle::kCaption);
-      const float state_width = ui.TextWidth(state, TextStyle::kCaption);
-      const float available = text_right - text_left;
-      const float needed = before_width + kStateGap + state_width + 1.0f;
-      const float scale = needed > available ? std::max(kSmallestText, available / needed) : 1.0f;
-      const float state_room = std::min(available, state_width * scale + 1.0f);
-      const float before_room = std::max(1.0f, std::min(before_width * scale + 1.0f,
-                                                        available - state_room - kStateGap * scale));
-      ui.TextLine(D2D1::RectF(text_left, detail_rect.top, text_left + before_room, detail_rect.bottom), before,
-                  TextStyle::kCaption, theme::kTextSecondary, Align::kLeading, kSmallestText);
-      const float state_left = text_left + before_room + kStateGap * scale;
-      ui.TextLine(D2D1::RectF(state_left, detail_rect.top, std::min(text_right, state_left + state_room),
-                              detail_rect.bottom),
-                  state, TextStyle::kCaption,
-                  row.use == AccountUse::kInGame ? theme::Rgb(state_.control_accent_rgb) : theme::kTextSecondary,
-                  Align::kLeading, kSmallestText);
-    }
-    const D2D1_RECT_F remove = D2D1::RectF(rect.right - 34.0f, center - 14.0f, rect.right - 6.0f, center + 14.0f);
-    if (ui.IconButton(control + L"#remove." + std::to_wstring(i), remove, glyph::kCancel,
-                      TF(L"Remove {0}", SavedAccountLabel(row.account)))) {
-      Defer([this, i] { RemoveInstanceAccount(i); });
-    }
-  }
-  const float last_top = top + kPadding + static_cast<float>(count) * kRowHeight;
-  const D2D1_RECT_F last =
-      D2D1::RectF(panel.left + kPadding, last_top, panel.right - kPadding, last_top + kLastRowHeight);
-  if (ui.MenuRow(control + L"#" + std::to_wstring(count), last, T(L"Add account"))) {
-    Defer([this, count] { StartInstanceWith(count); });
-  }
-  ui.Glyph(last.left + 10.0f + kPicture / 2.0f, (last.top + last.bottom) / 2.0f, glyph::kAdd, TextStyle::kIconSmall,
-           theme::kTextSecondary);
-  ui.TextLine(D2D1::RectF(last.left + kTextLeft, last.top, last.right - 10.0f, last.bottom), T(L"Add account"),
-              TextStyle::kBody, theme::kText);
+  const AccountListChoice choice = BuildAccountList(ui, control, panel, instance_accounts_, menu_scroll_);
   ui.PopLayer();
+  if (choice.kind == AccountListChoice::Kind::kOpen) {
+    Defer([this, row = choice.row] { StartInstanceWith(row); });
+  } else if (choice.kind == AccountListChoice::Kind::kRemove) {
+    Defer([this, row = choice.row] { RemoveInstanceAccount(row); });
+  }
 }
 
 namespace {

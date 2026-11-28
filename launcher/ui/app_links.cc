@@ -47,6 +47,7 @@ void App::OpenLink(LinkRequest request) {
 
 void App::BringToFront() {
   if (hwnd_ == nullptr) return;
+  account_picker_.Close();
   if (launch_menu_.hwnd()) ShowWindow(launch_menu_.hwnd(), SW_HIDE);
   play_from_menu_ = false;
   StartLauncherServices();
@@ -145,6 +146,13 @@ void App::RefreshInstanceAccounts() {
     const AccountUse use = QueryAccountUse(account.id);
     instance_accounts_.push_back(InstanceAccountRow{std::move(account), use});
   }
+  if (account_picker_.open()) {
+    if (instance_accounts_.empty()) {
+      account_picker_.Close();
+    } else {
+      account_picker_.SetRows(instance_accounts_);
+    }
+  }
 }
 
 void App::PrefetchAccountPictures() {
@@ -198,30 +206,55 @@ void App::ChooseInstanceAccount() {
   RefreshAccountPictures();
 }
 
+bool App::PlayAccountChoice(int* focus) {
+  if (runtime_.running || !PathIsFile(paths_.runtime_exe) || !config_.installed.present() || switching_) return false;
+  RefreshInstanceAccounts();
+  const int count = static_cast<int>(instance_accounts_.size());
+  const std::wstring current = SignedInAccountId(paths_.data_root);
+  const bool unknown = current.empty() && HasSavedSignIn(paths_.data_root);
+  const bool another = count == 1 && !unknown && instance_accounts_[0].account.id != current;
+  if (count < 2 && !another) return false;
+  *focus = 0;
+  for (int i = 0; i < count; ++i) {
+    if (instance_accounts_[static_cast<std::size_t>(i)].account.id == current) *focus = i;
+  }
+  return true;
+}
+
 void App::ChoosePlayAccount() {
   if (runtime_.running) return;
   if (MenuOpen(kPlayAccountControl)) {
     CloseMenu();
     return;
   }
-  if (!PathIsFile(paths_.runtime_exe) || !config_.installed.present() || switching_) {
-    Play();
-    return;
-  }
-  RefreshInstanceAccounts();
-  const int count = static_cast<int>(instance_accounts_.size());
-  const std::wstring current = SignedInAccountId(paths_.data_root);
-  const bool unknown = current.empty() && HasSavedSignIn(paths_.data_root);
-  const bool another = count == 1 && !unknown && instance_accounts_[0].account.id != current;
-  if (count < 2 && !another) {
-    Play();
-    return;
-  }
   int focus = 0;
-  for (int i = 0; i < count; ++i) {
-    if (instance_accounts_[static_cast<std::size_t>(i)].account.id == current) focus = i;
+  if (!PlayAccountChoice(&focus)) {
+    Play();
+    return;
   }
-  SetMenu(kPlayAccountControl, focus, count + 1);
+  SetMenu(kPlayAccountControl, focus, static_cast<int>(instance_accounts_.size()) + 1);
+  RefreshAccountPictures();
+}
+
+void App::OfferLaunchAccounts(int focus) {
+  const HWND button = GetDlgItem(launch_menu_.hwnd(), kLaunchMenuPlayId);
+  AccountPicker::Request request;
+  request.owner = launch_menu_.hwnd();
+  request.anchor = button;
+  request.rows = instance_accounts_;
+  request.focus = focus;
+  request.keyboard = launch_by_keyboard_ ||
+                     (button != nullptr && (SendMessageW(button, WM_QUERYUISTATE, 0, 0) & UISF_HIDEFOCUS) == 0);
+  request.motion = motion_enabled_ && !options_.test_mode;
+  request.offscreen = options_.offscreen;
+  request.accent = state_.control_accent_rgb;
+  request.on_open = [this](int row) { StartAccount(row, AccountTarget::kLaunchMenu); };
+  request.on_remove = [this](int row) { RemoveLaunchAccount(row); };
+  if (!account_picker_.Show(std::move(request))) {
+    ShowWindow(launch_menu_.hwnd(), SW_HIDE);
+    PlayFromMenu();
+    return;
+  }
   RefreshAccountPictures();
 }
 
@@ -235,10 +268,28 @@ void App::PlayWith(const InstanceAccount& account, const std::wstring& account_i
   Play();
 }
 
+void App::PlayFromMenuWith(const InstanceAccount& account, const std::wstring& account_id) {
+  if (runtime_.running) return;
+  std::wstring error;
+  if (!PrepareMainAccount(paths_, account, account_id, &error)) {
+    BringToFront();
+    ShowToast(TF(L"Couldn’t switch accounts: {0}.", error));
+    return;
+  }
+  ShowWindow(launch_menu_.hwnd(), SW_HIDE);
+  PlayFromMenu();
+}
+
 void App::StartInstanceWith(int row) {
+  if (row < 0 || row > static_cast<int>(instance_accounts_.size()) || !AccountMenuOpen()) return;
+  const AccountTarget target = MenuOpen(kPlayAccountControl) ? AccountTarget::kPlay : AccountTarget::kNewInstance;
+  CloseMenu();
+  StartAccount(row, target);
+}
+
+void App::StartAccount(int row, AccountTarget target) {
   const int count = static_cast<int>(instance_accounts_.size());
-  const bool for_play = MenuOpen(kPlayAccountControl);
-  if (row < 0 || row > count || !AccountMenuOpen()) return;
+  if (row < 0 || row > count) return;
   InstanceAccount account;
   AccountUse use = AccountUse::kNotOpen;
   std::wstring name;
@@ -253,9 +304,11 @@ void App::StartInstanceWith(int row) {
   } else {
     account.sign_in = InstanceSignIn::kSignedOut;
   }
-  CloseMenu();
+  if (target == AccountTarget::kLaunchMenu) account_picker_.Close();
   if (use == AccountUse::kNotOpen) {
-    if (for_play) {
+    if (target == AccountTarget::kLaunchMenu) {
+      PlayFromMenuWith(account, id);
+    } else if (target == AccountTarget::kPlay) {
       PlayWith(account, id);
     } else {
       OpenAnotherWindow(account);
@@ -264,7 +317,7 @@ void App::StartInstanceWith(int row) {
   }
   pending_instance_account_ = account;
   pending_account_id_ = id;
-  pending_account_for_play_ = for_play;
+  pending_account_for_play_ = target != AccountTarget::kNewInstance;
   Overlay overlay;
   overlay.id = L"instance.in-use";
   overlay.status = 1;
@@ -280,6 +333,7 @@ void App::StartInstanceWith(int row) {
   overlay.actions = {{L"instance.open", T(L"Open anyway"), ButtonStyle::kStandard},
                      {L"overlay.close", T(L"Cancel"), ButtonStyle::kStandard}};
   ShowOverlay(std::move(overlay));
+  if (target == AccountTarget::kLaunchMenu) BringToFront();
 }
 
 bool App::OnInstanceOverlayAction(const std::wstring& id) {
@@ -317,6 +371,19 @@ void App::RemoveInstanceAccount(int row) {
     SetMenu(control, std::min(row, count), count + 1);
   }
   ShowToast(TF(L"Removed {0}.", SavedAccountLabel(account)));
+}
+
+void App::RemoveLaunchAccount(int row) {
+  if (row < 0 || row >= static_cast<int>(instance_accounts_.size()) || !account_picker_.open()) return;
+  const std::wstring id = instance_accounts_[static_cast<std::size_t>(row)].account.id;
+  std::wstring error;
+  if (!RemoveSavedAccount(paths_.accounts_dir, id, &error)) {
+    BringToFront();
+    ShowToast(error);
+    return;
+  }
+  RefreshInstanceAccounts();
+  account_picker_.Focus(std::min(row, static_cast<int>(instance_accounts_.size())));
 }
 
 void App::OpenAnotherWindow(InstanceAccount account) {

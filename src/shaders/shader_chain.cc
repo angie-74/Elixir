@@ -248,6 +248,7 @@ struct ShaderService::Impl {
   bool started = false;
   bool marked = false;
   std::size_t last_passes = 0;
+  std::uint64_t stamp_at_start = 0;
 
   std::filesystem::path Marker() const { return settings.folder / kCacheFolderName / kStartingFileName; }
 
@@ -285,7 +286,7 @@ struct ShaderService::Impl {
   }
 
   void Run() {
-    std::uint64_t seen = settings.folder.empty() ? 0 : LibraryStamp(settings.folder);
+    std::uint64_t seen = stamp_at_start;
     std::uint64_t pending = seen;
     while (WaitForSingleObject(stop, 500) == WAIT_TIMEOUT) {
       if (marked && vulkan::Chains().Status().frames >= kSettledFrames) {
@@ -325,6 +326,7 @@ void ShaderService::Start() {
   for (const std::string& name : RecoverFromFailedStart(impl_->settings.folder)) {
     impl_->Say("shaders: " + name + " was turned off because Roblox closed while it was starting last time");
   }
+  impl_->stamp_at_start = impl_->settings.folder.empty() ? 0 : LibraryStamp(impl_->settings.folder);
   try {
     impl_->Apply(true);
   } catch (...) {

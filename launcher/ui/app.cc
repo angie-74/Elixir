@@ -335,6 +335,15 @@ void App::StartLauncherServices() {
   }
 }
 
+bool App::TranslateLaunchMenu(MSG* message) {
+  const HWND menu = launch_menu_.hwnd();
+  if (menu != nullptr && message != nullptr && (message->hwnd == menu || IsChild(menu, message->hwnd))) {
+    if (message->message == WM_KEYDOWN) launch_by_keyboard_ = true;
+    if (message->message == WM_LBUTTONDOWN) launch_by_keyboard_ = false;
+  }
+  return account_picker_.Translate(message) || launch_menu_.Translate(message);
+}
+
 void App::ChooseLaunchAction(LaunchMenuAction action) {
   if (action == LaunchMenuAction::kClose) {
     PostMessageW(hwnd_, WM_CLOSE, 0, 0);
@@ -344,10 +353,20 @@ void App::ChooseLaunchAction(LaunchMenuAction action) {
     BringToFront();
     return;
   }
-  ShowWindow(launch_menu_.hwnd(), SW_HIDE);
+  if (account_picker_.open()) {
+    if (account_picker_.OpenForMs() >= static_cast<double>(GetDoubleClickTime())) account_picker_.Close();
+    return;
+  }
+  int focus = 0;
+  const bool choice = !overlay_.open && PlayAccountChoice(&focus);
+  if (!choice) ShowWindow(launch_menu_.hwnd(), SW_HIDE);
   StartLauncherServices();
   if (overlay_.open) {
     BringToFront();
+    return;
+  }
+  if (choice) {
+    OfferLaunchAccounts(focus);
     return;
   }
   PlayFromMenu();

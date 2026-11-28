@@ -45,6 +45,8 @@
 #include "core/i18n.h"
 #include "fflags/editor.h"
 #include "ui/accessibility.h"
+#include "ui/account_list.h"
+#include "ui/account_picker.h"
 #include "ui/launch_menu.h"
 #include "ui/launch_progress.h"
 #include "ui/renderer.h"
@@ -155,8 +157,10 @@ class App final : public AccessibilityHost {
   App& operator=(const App&) = delete;
 
   bool Create();
-  bool TranslateLaunchMenu(MSG* message) const { return launch_menu_.Translate(message); }
+  bool TranslateLaunchMenu(MSG* message);
   HWND hwnd() const { return hwnd_; }
+  HWND launch_menu_hwnd() const { return launch_menu_.hwnd(); }
+  AccountPicker& account_picker() { return account_picker_; }
 
   void PostInstanceMessage(InstanceMessage message);
   void OpenLink(LinkRequest request);
@@ -481,9 +485,15 @@ class App final : public AccessibilityHost {
   void StartLauncherServices();
   void ChooseLaunchAction(LaunchMenuAction action);
   void StopRuntime();
+  enum class AccountTarget { kNewInstance, kPlay, kLaunchMenu };
   void ChooseInstanceAccount();
   void ChoosePlayAccount();
+  bool PlayAccountChoice(int* focus);
+  void OfferLaunchAccounts(int focus);
+  void StartAccount(int row, AccountTarget target);
+  void RemoveLaunchAccount(int row);
   void PlayWith(const InstanceAccount& account, const std::wstring& account_id);
+  void PlayFromMenuWith(const InstanceAccount& account, const std::wstring& account_id);
   bool AccountMenuOpen() const { return MenuOpen(kInstanceAccountControl) || MenuOpen(kPlayAccountControl); }
   void RefreshInstanceAccounts();
   void RefreshAccountPictures(int more_rounds = 3, bool wait_first = false);
@@ -604,11 +614,13 @@ class App final : public AccessibilityHost {
 
   AppOptions options_;
   LaunchMenu launch_menu_;
+  AccountPicker account_picker_;
   LaunchProgress launch_progress_;
   void ShowLaunchProgress(const std::wstring& message, bool can_cancel);
   void CloseLaunchProgress();
   bool services_started_ = false;
   bool play_from_menu_ = false;
+  bool launch_by_keyboard_ = false;
   LauncherPaths paths_;
   ConfigStore store_;
   LauncherConfig config_;
@@ -630,10 +642,7 @@ class App final : public AccessibilityHost {
     int number = 0;
     HANDLE process = nullptr;
   };
-  struct InstanceAccountRow {
-    SavedAccount account;
-    AccountUse use = AccountUse::kNotOpen;
-  };
+  using InstanceAccountRow = AccountRow;
   std::vector<ExtraWindow> extra_windows_;
   std::vector<InstanceAccountRow> instance_accounts_;
   InstanceAccount pending_instance_account_;
