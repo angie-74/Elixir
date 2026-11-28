@@ -41,7 +41,6 @@ struct PerformanceSettings {
   bool disable_power_throttling = true;
   bool timer_resolution_1ms = true;
   bool mmcss = true;
-  bool spin_before_sleep = true;
 };
 
 struct AudioSettings {

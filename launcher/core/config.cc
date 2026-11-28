@@ -137,7 +137,6 @@ Json ConfigToJson(const LauncherConfig& config) {
   performance.Set("disable_power_throttling", config.performance.disable_power_throttling);
   performance.Set("timer_resolution_1ms", config.performance.timer_resolution_1ms);
   performance.Set("mmcss", config.performance.mmcss);
-  performance.Set("spin_before_sleep", config.performance.spin_before_sleep);
 
   Json& audio = root.Set("audio", Json::MakeObject());
   audio.Set("output_device_id", config.audio.output_device_id);
@@ -267,7 +266,6 @@ LauncherConfig ConfigFromJson(const Json& json, std::vector<std::string>* warnin
                 &config.performance.disable_power_throttling);
     reader.Bool(performance, "performance", "timer_resolution_1ms", &config.performance.timer_resolution_1ms);
     reader.Bool(performance, "performance", "mmcss", &config.performance.mmcss);
-    reader.Bool(performance, "performance", "spin_before_sleep", &config.performance.spin_before_sleep);
   }
 
   if (const Json* audio = reader.Section("audio")) {

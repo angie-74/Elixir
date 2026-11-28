@@ -290,7 +290,6 @@ std::vector<std::wstring> BuildRuntimeArguments(const LauncherConfig& config, co
                L"--timer-resolution-1ms", on_off(config.performance.timer_resolution_1ms),
                L"--mmcss", on_off(config.performance.mmcss)});
   if (!paths.accounts_dir.empty()) args.insert(args.end(), {L"--accounts-dir", paths.accounts_dir});
-  if (!config.performance.spin_before_sleep) args.insert(args.end(), {L"--wait-spin", L"0"});
   args.insert(args.end(), {L"--upscale", on_off(config.graphics.upscaling), L"--sharpness", sharpness});
   if (config.graphics.upscaling && config.graphics.dynamic_resolution) {
     args.insert(args.end(), {L"--dynamic-resolution", L"on", L"--target-fps",

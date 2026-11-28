@@ -10,7 +10,7 @@
 
 cmake_minimum_required(VERSION 3.20)
 project(Elixir
-  VERSION 0.1.14
+  VERSION 0.1.15
   DESCRIPTION "Native Android Gaming for Windows"
   LANGUAGES CXX
 )
