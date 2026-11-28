@@ -31,6 +31,7 @@ bool Etc2SupportAdvertised(const char* value);
 bool Etc2SupportAdvertised();
 bool Etc2EmulationDisabled(const char* value);
 
+inline constexpr VkDeviceSize kDefaultUploadChunkBytes = VkDeviceSize{1} << 20;
 inline constexpr std::uint32_t kSmallTextureMaxExtent = 64;
 inline constexpr std::uint32_t kDefaultSmallTextureUpscale = 1;
 std::uint32_t SmallTextureUpscale(const char* value);
@@ -45,6 +46,11 @@ struct Etc2Statistics {
   std::uint64_t dropped_readbacks = 0;
   std::uint64_t decoded_bytes = 0;
   std::uint64_t decode_microseconds = 0;
+  std::uint64_t upload_buffers_made = 0;
+  std::uint64_t upload_buffers_reused = 0;
+  std::uint64_t uploads_sharing_a_buffer = 0;
+  std::uint64_t idle_upload_buffers = 0;
+  std::uint64_t idle_upload_bytes = 0;
 };
 
 std::string Etc2DecodeReport();
@@ -106,6 +112,8 @@ class VulkanEtc2Emulation final {
   void ReleaseCommandBuffer(VkCommandBuffer command_buffer);
 
   Etc2Statistics Statistics() const;
+  void SetUploadChunkBytes(VkDeviceSize bytes);
+  void AgeIdleUploadBuffers(std::uint64_t milliseconds);
 
   struct State;
 

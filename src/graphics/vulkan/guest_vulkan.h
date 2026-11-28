@@ -24,6 +24,8 @@ using PresentHook = void (*)(VkResult result);
 void SetPresentHook(PresentHook hook);
 std::uint64_t PresentedFrameCount();
 
+std::string CallTimesReport();
+
 bool InitializeHostVulkan(std::string* error = nullptr);
 
 void RegisterVulkanExports(std::unordered_map<std::string, void*>& exports);

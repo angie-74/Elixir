@@ -219,6 +219,17 @@ const std::vector<OptionSpec>& Options() {
          o->target_fps = static_cast<int>(parsed);
          return {};
        }},
+      {"--wait-spin", true,
+       [](LaunchOptions* o, const std::string& v) -> std::string {
+         errno = 0;
+         char* end = nullptr;
+         const long parsed = std::strtol(v.c_str(), &end, 10);
+         if (v.empty() || end != v.c_str() + v.size() || errno != 0 || parsed < 0 || parsed > 200) {
+           return "expected 0 to 200 microseconds, got " + Quoted(v);
+         }
+         o->wait_spin_us = static_cast<int>(parsed);
+         return {};
+       }},
       {"--controller", true, [](LaunchOptions* o, const std::string& v) { return OnOff(&o->controller, v); }},
       {"--user-fflags", true, [](LaunchOptions* o, const std::string& v) { return OnOff(&o->user_fflags, v); }},
       {"--discord", true,
@@ -411,6 +422,7 @@ std::string RuntimeUsage() {
            "  --shaders-dir <dir>         GLSL shaders drawn over the game (shaders.json says which are on)\n"
            "  --upscale on|off  --sharpness <0.00-1.00>   Elixir's own upscaling of a smaller game picture\n"
            "  --dynamic-resolution on|off  --target-fps <20-480>   lower the scale to hold a frame rate\n"
+           "  --wait-spin <0-200>         microseconds a thread watches for its wake before it sleeps (0: never)\n"
            "  --audio-device default|<endpoint id>\n"
            "  --audio-input-device default|disabled|<capture endpoint id>\n"
            "\n"
@@ -467,6 +479,7 @@ std::vector<std::string> FormatRuntimeArguments(const LaunchOptions& options) {
   }
   if (options.dynamic_resolution) add("--dynamic-resolution", *options.dynamic_resolution ? "on" : "off");
   if (options.target_fps) add("--target-fps", std::to_string(*options.target_fps));
+  if (options.wait_spin_us) add("--wait-spin", std::to_string(*options.wait_spin_us));
   if (!options.guest_runtime_dir.empty()) add("--guest-runtime", NativeUtf8(options.guest_runtime_dir));
   if (!options.renderer.empty()) add("--renderer", options.renderer);
   if (!options.present_mode.empty()) add("--present-mode", options.present_mode);

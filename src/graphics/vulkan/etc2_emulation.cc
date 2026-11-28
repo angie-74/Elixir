@@ -221,7 +221,20 @@ struct Staging {
   VkBuffer buffer = VK_NULL_HANDLE;
   VkDeviceMemory memory = VK_NULL_HANDLE;
   bool host_cached = false;
+  VkDeviceSize capacity = 0;
+  std::uint8_t* mapped = nullptr;
 };
+
+constexpr VkDeviceSize kIdleStagingLimitBytes = VkDeviceSize{64} << 20;
+constexpr std::size_t kIdleStagingLimitCount = 32;
+constexpr std::uint64_t kIdleStagingMilliseconds = 30000;
+constexpr VkDeviceSize kStagingAlignment = 16;
+
+std::uint64_t SteadyMilliseconds() {
+  return static_cast<std::uint64_t>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+          .count());
+}
 
 struct PendingUpload {
   VkDevice device = VK_NULL_HANDLE;
@@ -253,6 +266,7 @@ struct PendingUpload {
 struct CommandRecord {
   std::vector<PendingUpload> uploads;
   std::vector<Staging> staging;
+  VkDeviceSize staging_used = 0;
   std::vector<VkCommandBuffer> secondaries;
 };
 
@@ -276,6 +290,9 @@ struct Counters {
   std::atomic<std::uint64_t> decoded_bytes{0};
   std::atomic<std::uint64_t> decode_microseconds{0};
   std::atomic<std::uint64_t> longest_decode_microseconds{0};
+  std::atomic<std::uint64_t> staging_made{0};
+  std::atomic<std::uint64_t> staging_reused{0};
+  std::atomic<std::uint64_t> staging_shared{0};
 };
 
 Counters& Stats() {
@@ -342,7 +359,8 @@ bool CreateStaging(const HostDevice& dev, VkDeviceSize size, Staging* staging, s
     return false;
   }
   *staging = {dev.device, buffer, memory,
-              (dev.memory.memoryTypes[type].propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) != 0};
+              (dev.memory.memoryTypes[type].propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) != 0, size,
+              static_cast<std::uint8_t*>(data)};
   *mapped = static_cast<std::uint8_t*>(data);
   return true;
 }
@@ -606,12 +624,43 @@ struct VulkanEtc2Emulation::State {
     return dev != nullptr && dev->emulated ? dev : nullptr;
   }
 
-  void Record(VkCommandBuffer command_buffer, std::vector<PendingUpload> uploads, const Staging& staging) {
+  void Record(VkCommandBuffer command_buffer, std::vector<PendingUpload> uploads) {
     std::lock_guard<std::mutex> lock(commands_mutex);
     CommandRecord& record = commands[command_buffer];
     record.uploads.insert(record.uploads.end(), uploads.begin(), uploads.end());
-    record.staging.push_back(staging);
     has_commands.store(true, std::memory_order_release);
+  }
+
+  std::atomic<VkDeviceSize> staging_chunk{kDefaultUploadChunkBytes};
+
+  bool ReserveStaging(const HostDevice& dev, VkCommandBuffer command_buffer, VkDeviceSize size, Staging* staging,
+                      VkDeviceSize* offset) {
+    {
+      std::lock_guard<std::mutex> lock(commands_mutex);
+      const auto found = commands.find(command_buffer);
+      if (found != commands.end() && !found->second.staging.empty()) {
+        CommandRecord& record = found->second;
+        const Staging& last = record.staging.back();
+        const VkDeviceSize start = (record.staging_used + kStagingAlignment - 1) & ~(kStagingAlignment - 1);
+        if (last.device == dev.device && start <= last.capacity && size <= last.capacity - start) {
+          *staging = last;
+          *offset = start;
+          record.staging_used = start + size;
+          Stats().staging_shared.fetch_add(1, std::memory_order_relaxed);
+          return true;
+        }
+      }
+    }
+    Staging fresh;
+    if (!AcquireStaging(dev, std::max(size, staging_chunk.load(std::memory_order_relaxed)), &fresh)) return false;
+    std::lock_guard<std::mutex> lock(commands_mutex);
+    CommandRecord& record = commands[command_buffer];
+    record.staging.push_back(fresh);
+    record.staging_used = size;
+    has_commands.store(true, std::memory_order_release);
+    *staging = fresh;
+    *offset = 0;
+    return true;
   }
 
   std::vector<Staging> TakeLocked(VkCommandBuffer command_buffer) {
@@ -632,6 +681,99 @@ struct VulkanEtc2Emulation::State {
         DestroyStaging(*dev, staging);
       }
     }
+  }
+
+  struct IdleStaging {
+    Staging staging;
+    std::uint64_t since = 0;
+  };
+  std::mutex staging_mutex;
+  std::vector<IdleStaging> idle_staging;
+  VkDeviceSize idle_staging_bytes = 0;
+  std::atomic<std::uint64_t> staging_age{0};
+
+  std::uint64_t StagingNow() const { return SteadyMilliseconds() + staging_age.load(std::memory_order_relaxed); }
+
+  void TakeExpiredLocked(std::uint64_t now, std::vector<Staging>* expired) {
+    for (auto it = idle_staging.begin(); it != idle_staging.end();) {
+      if (now - it->since >= kIdleStagingMilliseconds) {
+        expired->push_back(it->staging);
+        idle_staging_bytes -= it->staging.capacity;
+        it = idle_staging.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+
+  bool AcquireStaging(const HostDevice& dev, VkDeviceSize size, Staging* staging) {
+    std::vector<Staging> expired;
+    bool reused = false;
+    {
+      std::lock_guard<std::mutex> lock(staging_mutex);
+      TakeExpiredLocked(StagingNow(), &expired);
+      std::size_t best = idle_staging.size();
+      for (std::size_t index = 0; index < idle_staging.size(); ++index) {
+        const Staging& candidate = idle_staging[index].staging;
+        if (candidate.device != dev.device || candidate.capacity < size || candidate.capacity / 2 > size) continue;
+        if (best == idle_staging.size() || candidate.capacity < idle_staging[best].staging.capacity) best = index;
+      }
+      if (best != idle_staging.size()) {
+        *staging = idle_staging[best].staging;
+        idle_staging_bytes -= staging->capacity;
+        idle_staging.erase(idle_staging.begin() + static_cast<std::ptrdiff_t>(best));
+        reused = true;
+      }
+    }
+    DestroyAll(expired);
+    if (reused) {
+      Stats().staging_reused.fetch_add(1, std::memory_order_relaxed);
+      return true;
+    }
+    std::uint8_t* mapped = nullptr;
+    if (!CreateStaging(dev, size, staging, &mapped)) return false;
+    Stats().staging_made.fetch_add(1, std::memory_order_relaxed);
+    return true;
+  }
+
+  void ReleaseStaging(const std::vector<Staging>& released) {
+    if (released.empty()) return;
+    std::vector<Staging> doomed;
+    {
+      std::lock_guard<std::mutex> lock(staging_mutex);
+      const std::uint64_t now = StagingNow();
+      TakeExpiredLocked(now, &doomed);
+      for (const Staging& staging : released) {
+        if (staging.mapped == nullptr || staging.capacity > kIdleStagingLimitBytes) {
+          doomed.push_back(staging);
+          continue;
+        }
+        idle_staging.push_back({staging, now});
+        idle_staging_bytes += staging.capacity;
+      }
+      while (!idle_staging.empty() &&
+             (idle_staging.size() > kIdleStagingLimitCount || idle_staging_bytes > kIdleStagingLimitBytes)) {
+        doomed.push_back(idle_staging.front().staging);
+        idle_staging_bytes -= idle_staging.front().staging.capacity;
+        idle_staging.erase(idle_staging.begin());
+      }
+    }
+    DestroyAll(doomed);
+  }
+
+  std::vector<Staging> TakeIdleStaging(VkDevice device) {
+    std::vector<Staging> taken;
+    std::lock_guard<std::mutex> lock(staging_mutex);
+    for (auto it = idle_staging.begin(); it != idle_staging.end();) {
+      if (it->staging.device == device) {
+        taken.push_back(it->staging);
+        idle_staging_bytes -= it->staging.capacity;
+        it = idle_staging.erase(it);
+      } else {
+        ++it;
+      }
+    }
+    return taken;
   }
 };
 
@@ -747,6 +889,8 @@ void VulkanEtc2Emulation::DestroyDevice(VkDevice device) {
       it = it->second.device == device ? state_->images.erase(it) : std::next(it);
     }
   }
+  const std::vector<Staging> idle = state_->TakeIdleStaging(device);
+  doomed.insert(doomed.end(), idle.begin(), idle.end());
   if (const HostDevice* dev = state_->Find(device); dev != nullptr) {
     for (const Staging& staging : doomed) {
       DestroyStaging(*dev, staging);
@@ -986,16 +1130,19 @@ bool VulkanEtc2Emulation::CmdCopyBufferToImage(VkCommandBuffer command_buffer, V
     LogFailure("skipped an upload with an unsupported region");
     return true;
   }
-  if (!CreateStaging(*dev, total, &staging, &mapped)) {
+  VkDeviceSize base = 0;
+  if (!state_->ReserveStaging(*dev, command_buffer, total, &staging, &base)) {
     LogFailure("could not allocate a host-visible staging buffer");
     return true;
   }
+  mapped = staging.mapped + base;
   for (PendingUpload& upload : uploads) {
     upload.target = mapped + upload.target_offset;
     upload.target_cached = staging.host_cached;
   }
+  for (VkBufferImageCopy& copy : rewritten) copy.bufferOffset += base;
   Stats().recorded_uploads.fetch_add(uploads.size(), std::memory_order_relaxed);
-  state_->Record(command_buffer, std::move(uploads), staging);
+  state_->Record(command_buffer, std::move(uploads));
   dev->copy_buffer_to_image(command_buffer, staging.buffer, destination, layout, region_count, rewritten.data());
   return true;
 }
@@ -1020,16 +1167,19 @@ bool VulkanEtc2Emulation::CmdCopyBufferToImage2(VkCommandBuffer command_buffer,
     LogFailure("skipped an upload with an unsupported region");
     return true;
   }
-  if (!CreateStaging(*dev, total, &staging, &mapped)) {
+  VkDeviceSize base = 0;
+  if (!state_->ReserveStaging(*dev, command_buffer, total, &staging, &base)) {
     LogFailure("could not allocate a host-visible staging buffer");
     return true;
   }
+  mapped = staging.mapped + base;
   for (PendingUpload& upload : uploads) {
     upload.target = mapped + upload.target_offset;
     upload.target_cached = staging.host_cached;
   }
+  for (VkBufferImageCopy2& copy : rewritten) copy.bufferOffset += base;
   Stats().recorded_uploads.fetch_add(uploads.size(), std::memory_order_relaxed);
-  state_->Record(command_buffer, std::move(uploads), staging);
+  state_->Record(command_buffer, std::move(uploads));
   VkCopyBufferToImageInfo2 host_info = *info;
   host_info.srcBuffer = staging.buffer;
   host_info.pRegions = rewritten.data();
@@ -1157,7 +1307,7 @@ void VulkanEtc2Emulation::FreeCommandBuffers(std::uint32_t count, const VkComman
       state_->pools.erase(command_buffers[index]);
     }
   }
-  state_->DestroyAll(doomed);
+  state_->ReleaseStaging(doomed);
 }
 
 void VulkanEtc2Emulation::ReleaseCommandPool(VkDevice device, VkCommandPool pool, bool destroyed) {
@@ -1174,7 +1324,7 @@ void VulkanEtc2Emulation::ReleaseCommandPool(VkDevice device, VkCommandPool pool
       it = destroyed ? state_->pools.erase(it) : std::next(it);
     }
   }
-  state_->DestroyAll(doomed);
+  state_->ReleaseStaging(doomed);
 }
 
 bool VulkanEtc2Emulation::HasPendingUploads() const { return state_->has_commands.load(std::memory_order_acquire); }
@@ -1383,7 +1533,15 @@ void VulkanEtc2Emulation::ReleaseCommandBuffer(VkCommandBuffer command_buffer) {
     std::lock_guard<std::mutex> lock(state_->commands_mutex);
     doomed = state_->TakeLocked(command_buffer);
   }
-  state_->DestroyAll(doomed);
+  state_->ReleaseStaging(doomed);
+}
+
+void VulkanEtc2Emulation::SetUploadChunkBytes(VkDeviceSize bytes) {
+  state_->staging_chunk.store(bytes, std::memory_order_relaxed);
+}
+
+void VulkanEtc2Emulation::AgeIdleUploadBuffers(std::uint64_t milliseconds) {
+  state_->staging_age.fetch_add(milliseconds, std::memory_order_relaxed);
 }
 
 Etc2Statistics VulkanEtc2Emulation::Statistics() const {
@@ -1398,6 +1556,14 @@ Etc2Statistics VulkanEtc2Emulation::Statistics() const {
   result.dropped_readbacks = counters.dropped_readbacks.load(std::memory_order_relaxed);
   result.decoded_bytes = counters.decoded_bytes.load(std::memory_order_relaxed);
   result.decode_microseconds = counters.decode_microseconds.load(std::memory_order_relaxed);
+  result.upload_buffers_made = counters.staging_made.load(std::memory_order_relaxed);
+  result.upload_buffers_reused = counters.staging_reused.load(std::memory_order_relaxed);
+  result.uploads_sharing_a_buffer = counters.staging_shared.load(std::memory_order_relaxed);
+  {
+    std::lock_guard<std::mutex> lock(state_->staging_mutex);
+    result.idle_upload_buffers = state_->idle_staging.size();
+    result.idle_upload_bytes = state_->idle_staging_bytes;
+  }
   return result;
 }
 
@@ -1406,6 +1572,9 @@ std::string Etc2DecodeReport() {
   static std::atomic<std::uint64_t> seen_compressed{0};
   static std::atomic<std::uint64_t> seen_decoded{0};
   static std::atomic<std::uint64_t> seen_microseconds{0};
+  static std::atomic<std::uint64_t> seen_made{0};
+  static std::atomic<std::uint64_t> seen_reused{0};
+  static std::atomic<std::uint64_t> seen_shared{0};
   Counters& counters = Stats();
   const std::uint64_t uploads = counters.decoded_uploads.load(std::memory_order_relaxed);
   const std::uint64_t compressed = counters.compressed_bytes.load(std::memory_order_relaxed);
@@ -1417,17 +1586,25 @@ std::string Etc2DecodeReport() {
   const std::uint64_t new_decoded = decoded - seen_decoded.exchange(decoded, std::memory_order_relaxed);
   const std::uint64_t new_microseconds =
       microseconds - seen_microseconds.exchange(microseconds, std::memory_order_relaxed);
+  const std::uint64_t made = counters.staging_made.load(std::memory_order_relaxed);
+  const std::uint64_t reused = counters.staging_reused.load(std::memory_order_relaxed);
+  const std::uint64_t new_made = made - seen_made.exchange(made, std::memory_order_relaxed);
+  const std::uint64_t new_reused = reused - seen_reused.exchange(reused, std::memory_order_relaxed);
+  const std::uint64_t shared = counters.staging_shared.load(std::memory_order_relaxed);
+  const std::uint64_t new_shared = shared - seen_shared.exchange(shared, std::memory_order_relaxed);
   if (new_uploads == 0) {
     return {};
   }
   constexpr double kMegabyte = 1024.0 * 1024.0;
-  char text[256];
+  char text[320];
   std::snprintf(text, sizeof(text),
                 "texture decoding: %llu %s, %.2f MB of ETC textures became %.2f MB in %.2f ms, the longest submit "
-                "took %.2f ms%s",
+                "took %.2f ms; upload buffers: %llu made, %llu used again, %llu uploads shared one%s",
                 static_cast<unsigned long long>(new_uploads), new_uploads == 1 ? "upload" : "uploads",
                 static_cast<double>(new_compressed) / kMegabyte, static_cast<double>(new_decoded) / kMegabyte,
                 static_cast<double>(new_microseconds) / 1000.0, static_cast<double>(longest) / 1000.0,
+                static_cast<unsigned long long>(new_made), static_cast<unsigned long long>(new_reused),
+                static_cast<unsigned long long>(new_shared),
                 EtcDecoderIsVectorized() ? "" : " (the portable decoder: this processor has no SSSE3)");
   return text;
 }

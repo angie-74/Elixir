@@ -632,6 +632,64 @@ void SetPresentHook(PresentHook hook) { g_present_hook.store(hook, std::memory_o
 
 std::uint64_t PresentedFrameCount() { return g_presented_frames.load(std::memory_order_relaxed); }
 
+struct CallClock {
+  const char* one;
+  const char* many;
+  std::atomic<std::uint64_t> calls{0};
+  std::atomic<std::uint64_t> ticks{0};
+  std::atomic<std::uint64_t> longest{0};
+};
+
+enum TimedCall { kTimedSubmit, kTimedPresent, kTimedAcquire, kTimedFenceWait, kTimedQueueIdle, kTimedDeviceIdle, kTimedCalls };
+
+CallClock g_call_clocks[kTimedCalls] = {
+    {"submit", "submits"},       {"present", "presents"},          {"acquire", "acquires"},
+    {"fence wait", "fence waits"}, {"wait for the queue", "waits for the queue"},
+    {"wait for the device", "waits for the device"},
+};
+
+std::int64_t CallTicks() {
+  LARGE_INTEGER counter;
+  QueryPerformanceCounter(&counter);
+  return counter.QuadPart;
+}
+
+class CallTimer {
+ public:
+  explicit CallTimer(TimedCall call) : clock_(g_call_clocks[call]), start_(CallTicks()) {}
+  ~CallTimer() {
+    const auto ticks = static_cast<std::uint64_t>(CallTicks() - start_);
+    clock_.calls.fetch_add(1, std::memory_order_relaxed);
+    clock_.ticks.fetch_add(ticks, std::memory_order_relaxed);
+    std::uint64_t longest = clock_.longest.load(std::memory_order_relaxed);
+    while (ticks > longest && !clock_.longest.compare_exchange_weak(longest, ticks, std::memory_order_relaxed)) {
+    }
+  }
+
+ private:
+  CallClock& clock_;
+  std::int64_t start_;
+};
+
+std::string CallTimesReport() {
+  LARGE_INTEGER frequency;
+  QueryPerformanceFrequency(&frequency);
+  const double to_ms = 1000.0 / static_cast<double>(frequency.QuadPart > 0 ? frequency.QuadPart : 10000000);
+  std::string report;
+  for (CallClock& clock : g_call_clocks) {
+    const std::uint64_t calls = clock.calls.exchange(0, std::memory_order_relaxed);
+    const std::uint64_t ticks = clock.ticks.exchange(0, std::memory_order_relaxed);
+    const std::uint64_t longest = clock.longest.exchange(0, std::memory_order_relaxed);
+    if (calls == 0) continue;
+    char text[160];
+    std::snprintf(text, sizeof(text), "%s%llu %s in %.1f ms (the longest %.2f)", report.empty() ? "" : ", ",
+                  static_cast<unsigned long long>(calls), calls == 1 ? clock.one : clock.many,
+                  static_cast<double>(ticks) * to_ms, static_cast<double>(longest) * to_ms);
+    report += text;
+  }
+  return report.empty() ? report : "vulkan calls: " + report;
+}
+
 void RegisterNativeWindow(const void* anative_window, HWND hwnd) {
   std::lock_guard<std::mutex> lock(WindowMutex());
   Windows()[anative_window].hwnd = hwnd;
@@ -1476,6 +1534,7 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkAcquireNextImageKHR(VkDevice device, 
   const auto acquire = ELIXIR_VK_HOST(vkAcquireNextImageKHR);
   if (acquire == nullptr) return VK_ERROR_INITIALIZATION_FAILED;
   const elixir::platform::GuestThreadResume resume;
+  const vk::CallTimer timer(vk::kTimedAcquire);
   return vk::NormalizeAndroidSwapchainResult(
       acquire(device, swapchain, timeout, semaphore, fence, pImageIndex));
 }
@@ -1486,6 +1545,7 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkAcquireNextImage2KHR(VkDevice device,
   const auto acquire = ELIXIR_VK_HOST(vkAcquireNextImage2KHR);
   if (acquire == nullptr) return VK_ERROR_INITIALIZATION_FAILED;
   const elixir::platform::GuestThreadResume resume;
+  const vk::CallTimer timer(vk::kTimedAcquire);
   return vk::NormalizeAndroidSwapchainResult(acquire(device, pAcquireInfo, pImageIndex));
 }
 
@@ -1495,8 +1555,11 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkQueuePresentKHR(VkQueue queue,
   if (present == nullptr) return VK_ERROR_INITIALIZATION_FAILED;
   const elixir::platform::GuestThreadResume resume;
   VkResult result = VK_SUCCESS;
-  if (!vk::FrameChainsLive() || !vk::Chains().Present(queue, pPresentInfo, present, &result)) {
-    result = present(queue, pPresentInfo);
+  {
+    const vk::CallTimer timer(vk::kTimedPresent);
+    if (!vk::FrameChainsLive() || !vk::Chains().Present(queue, pPresentInfo, present, &result)) {
+      result = present(queue, pPresentInfo);
+    }
   }
   const elixir::vulkan::PresentHook hook = g_present_hook.load(std::memory_order_acquire);
   if (pPresentInfo != nullptr && pPresentInfo->pResults != nullptr) {
@@ -1883,13 +1946,34 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkQueueSubmit(VkQueue queue, uint32_t s
                                                        const VkSubmitInfo* pSubmits, VkFence fence) {
   vk::PrepareEtc2Submit(submitCount, pSubmits);
   const elixir::platform::GuestThreadResume resume;
+  const vk::CallTimer timer(vk::kTimedSubmit);
   return ELIXIR_VK_HOST(vkQueueSubmit)(queue, submitCount, pSubmits, fence);
+}
+
+ELIXIR_SYSV VkResult elixir_vk_intercept_vkWaitForFences(VkDevice device, uint32_t fenceCount, const VkFence* pFences,
+                                                         VkBool32 waitAll, uint64_t timeout) {
+  const elixir::platform::GuestThreadResume resume;
+  const vk::CallTimer timer(vk::kTimedFenceWait);
+  return ELIXIR_VK_HOST(vkWaitForFences)(device, fenceCount, pFences, waitAll, timeout);
+}
+
+ELIXIR_SYSV VkResult elixir_vk_intercept_vkQueueWaitIdle(VkQueue queue) {
+  const elixir::platform::GuestThreadResume resume;
+  const vk::CallTimer timer(vk::kTimedQueueIdle);
+  return ELIXIR_VK_HOST(vkQueueWaitIdle)(queue);
+}
+
+ELIXIR_SYSV VkResult elixir_vk_intercept_vkDeviceWaitIdle(VkDevice device) {
+  const elixir::platform::GuestThreadResume resume;
+  const vk::CallTimer timer(vk::kTimedDeviceIdle);
+  return ELIXIR_VK_HOST(vkDeviceWaitIdle)(device);
 }
 
 ELIXIR_SYSV VkResult elixir_vk_intercept_vkQueueSubmit2(VkQueue queue, uint32_t submitCount,
                                                         const VkSubmitInfo2* pSubmits, VkFence fence) {
   vk::PrepareEtc2Submit2(submitCount, pSubmits);
   const elixir::platform::GuestThreadResume resume;
+  const vk::CallTimer timer(vk::kTimedSubmit);
   return ELIXIR_VK_HOST(vkQueueSubmit2)(queue, submitCount, pSubmits, fence);
 }
 
@@ -1897,6 +1981,7 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkQueueSubmit2KHR(VkQueue queue, uint32
                                                            const VkSubmitInfo2* pSubmits, VkFence fence) {
   vk::PrepareEtc2Submit2(submitCount, pSubmits);
   const elixir::platform::GuestThreadResume resume;
+  const vk::CallTimer timer(vk::kTimedSubmit);
   return ELIXIR_VK_HOST(vkQueueSubmit2KHR)(queue, submitCount, pSubmits, fence);
 }
 

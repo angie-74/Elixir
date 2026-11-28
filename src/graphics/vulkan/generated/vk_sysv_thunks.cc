@@ -1784,10 +1784,6 @@ ELIXIR_SYSV void elixir_vk_sysv_vkDestroyVideoSessionParametersKHR(VkDevice devi
   ELIXIR_VK_HOST(vkDestroyVideoSessionParametersKHR)(device, videoSessionParameters, nullptr);
 }
 
-ELIXIR_SYSV VkResult elixir_vk_sysv_vkDeviceWaitIdle(VkDevice device) {
-  return ELIXIR_VK_HOST(vkDeviceWaitIdle)(device);
-}
-
 ELIXIR_SYSV VkResult elixir_vk_sysv_vkDisplayPowerControlEXT(VkDevice device, VkDisplayKHR display, const VkDisplayPowerInfoEXT* pDisplayPowerInfo) {
   return ELIXIR_VK_HOST(vkDisplayPowerControlEXT)(device, display, pDisplayPowerInfo);
 }
@@ -2608,10 +2604,6 @@ ELIXIR_SYSV VkResult elixir_vk_sysv_vkQueueSetPerformanceConfigurationINTEL(VkQu
   return ELIXIR_VK_HOST(vkQueueSetPerformanceConfigurationINTEL)(queue, configuration);
 }
 
-ELIXIR_SYSV VkResult elixir_vk_sysv_vkQueueWaitIdle(VkQueue queue) {
-  return ELIXIR_VK_HOST(vkQueueWaitIdle)(queue);
-}
-
 ELIXIR_SYSV VkResult elixir_vk_sysv_vkRegisterCustomBorderColorEXT(VkDevice device, const VkSamplerCustomBorderColorCreateInfoEXT* pBorderColor, VkBool32 requestIndex, uint32_t* pIndex) {
   return ELIXIR_VK_HOST(vkRegisterCustomBorderColorEXT)(device, pBorderColor, requestIndex, pIndex);
 }
@@ -2778,10 +2770,6 @@ ELIXIR_SYSV void elixir_vk_sysv_vkUpdateIndirectExecutionSetShaderEXT(VkDevice d
 
 ELIXIR_SYSV VkResult elixir_vk_sysv_vkUpdateVideoSessionParametersKHR(VkDevice device, VkVideoSessionParametersKHR videoSessionParameters, const VkVideoSessionParametersUpdateInfoKHR* pUpdateInfo) {
   return ELIXIR_VK_HOST(vkUpdateVideoSessionParametersKHR)(device, videoSessionParameters, pUpdateInfo);
-}
-
-ELIXIR_SYSV VkResult elixir_vk_sysv_vkWaitForFences(VkDevice device, uint32_t fenceCount, const VkFence* pFences, VkBool32 waitAll, uint64_t timeout) {
-  return ELIXIR_VK_HOST(vkWaitForFences)(device, fenceCount, pFences, waitAll, timeout);
 }
 
 ELIXIR_SYSV VkResult elixir_vk_sysv_vkWaitForPresent2KHR(VkDevice device, VkSwapchainKHR swapchain, const VkPresentWait2InfoKHR* pPresentWait2Info) {
@@ -3307,7 +3295,7 @@ ELIXIR_VK_SIGNATURE(vkDestroyTensorViewARM, elixir_vk_sysv_vkDestroyTensorViewAR
 ELIXIR_VK_SIGNATURE(vkDestroyValidationCacheEXT, elixir_vk_sysv_vkDestroyValidationCacheEXT)
 ELIXIR_VK_SIGNATURE(vkDestroyVideoSessionKHR, elixir_vk_sysv_vkDestroyVideoSessionKHR)
 ELIXIR_VK_SIGNATURE(vkDestroyVideoSessionParametersKHR, elixir_vk_sysv_vkDestroyVideoSessionParametersKHR)
-ELIXIR_VK_SIGNATURE(vkDeviceWaitIdle, elixir_vk_sysv_vkDeviceWaitIdle)
+ELIXIR_VK_SIGNATURE(vkDeviceWaitIdle, elixir_vk_intercept_vkDeviceWaitIdle)
 ELIXIR_VK_SIGNATURE(vkDisplayPowerControlEXT, elixir_vk_sysv_vkDisplayPowerControlEXT)
 ELIXIR_VK_SIGNATURE(vkEndCommandBuffer, elixir_vk_sysv_vkEndCommandBuffer)
 ELIXIR_VK_SIGNATURE(vkEnumerateDeviceExtensionProperties, elixir_vk_intercept_vkEnumerateDeviceExtensionProperties)
@@ -3557,7 +3545,7 @@ ELIXIR_VK_SIGNATURE(vkQueueSetPerformanceConfigurationINTEL, elixir_vk_sysv_vkQu
 ELIXIR_VK_SIGNATURE(vkQueueSubmit, elixir_vk_intercept_vkQueueSubmit)
 ELIXIR_VK_SIGNATURE(vkQueueSubmit2, elixir_vk_intercept_vkQueueSubmit2)
 ELIXIR_VK_SIGNATURE(vkQueueSubmit2KHR, elixir_vk_intercept_vkQueueSubmit2KHR)
-ELIXIR_VK_SIGNATURE(vkQueueWaitIdle, elixir_vk_sysv_vkQueueWaitIdle)
+ELIXIR_VK_SIGNATURE(vkQueueWaitIdle, elixir_vk_intercept_vkQueueWaitIdle)
 ELIXIR_VK_SIGNATURE(vkRegisterCustomBorderColorEXT, elixir_vk_sysv_vkRegisterCustomBorderColorEXT)
 ELIXIR_VK_SIGNATURE(vkRegisterDeviceEventEXT, elixir_vk_sysv_vkRegisterDeviceEventEXT)
 ELIXIR_VK_SIGNATURE(vkRegisterDisplayEventEXT, elixir_vk_sysv_vkRegisterDisplayEventEXT)
@@ -3605,7 +3593,7 @@ ELIXIR_VK_SIGNATURE(vkUpdateDescriptorSets, elixir_vk_sysv_vkUpdateDescriptorSet
 ELIXIR_VK_SIGNATURE(vkUpdateIndirectExecutionSetPipelineEXT, elixir_vk_sysv_vkUpdateIndirectExecutionSetPipelineEXT)
 ELIXIR_VK_SIGNATURE(vkUpdateIndirectExecutionSetShaderEXT, elixir_vk_sysv_vkUpdateIndirectExecutionSetShaderEXT)
 ELIXIR_VK_SIGNATURE(vkUpdateVideoSessionParametersKHR, elixir_vk_sysv_vkUpdateVideoSessionParametersKHR)
-ELIXIR_VK_SIGNATURE(vkWaitForFences, elixir_vk_sysv_vkWaitForFences)
+ELIXIR_VK_SIGNATURE(vkWaitForFences, elixir_vk_intercept_vkWaitForFences)
 ELIXIR_VK_SIGNATURE(vkWaitForPresent2KHR, elixir_vk_sysv_vkWaitForPresent2KHR)
 ELIXIR_VK_SIGNATURE(vkWaitForPresentKHR, elixir_vk_sysv_vkWaitForPresentKHR)
 ELIXIR_VK_SIGNATURE(vkWaitSemaphores, elixir_vk_sysv_vkWaitSemaphores)
@@ -4098,7 +4086,7 @@ const CommandInfo kCommands[kCommandCount] = {
     {"vkDestroyValidationCacheEXT", ELIXIR_VK_PROC(elixir_vk_sysv_vkDestroyValidationCacheEXT), 0, "VK_EXT_validation_cache", CommandLevel::kDevice, 0},
     {"vkDestroyVideoSessionKHR", ELIXIR_VK_PROC(elixir_vk_sysv_vkDestroyVideoSessionKHR), 0, "VK_KHR_video_queue", CommandLevel::kDevice, 0},
     {"vkDestroyVideoSessionParametersKHR", ELIXIR_VK_PROC(elixir_vk_sysv_vkDestroyVideoSessionParametersKHR), 0, "VK_KHR_video_queue", CommandLevel::kDevice, 0},
-    {"vkDeviceWaitIdle", ELIXIR_VK_PROC(elixir_vk_sysv_vkDeviceWaitIdle), VK_API_VERSION_1_0, nullptr, CommandLevel::kDevice, kCommandCore | kCommandLibvulkanExport},
+    {"vkDeviceWaitIdle", ELIXIR_VK_PROC(elixir_vk_intercept_vkDeviceWaitIdle), VK_API_VERSION_1_0, nullptr, CommandLevel::kDevice, kCommandCore | kCommandIntercepted | kCommandLibvulkanExport},
     {"vkDisplayPowerControlEXT", ELIXIR_VK_PROC(elixir_vk_sysv_vkDisplayPowerControlEXT), 0, "VK_EXT_display_control", CommandLevel::kDevice, 0},
     {"vkEndCommandBuffer", ELIXIR_VK_PROC(elixir_vk_sysv_vkEndCommandBuffer), VK_API_VERSION_1_0, nullptr, CommandLevel::kDevice, kCommandCore | kCommandLibvulkanExport},
     {"vkEnumerateDeviceExtensionProperties", ELIXIR_VK_PROC(elixir_vk_intercept_vkEnumerateDeviceExtensionProperties), VK_API_VERSION_1_0, nullptr, CommandLevel::kInstance, kCommandCore | kCommandIntercepted | kCommandLibvulkanExport},
@@ -4359,7 +4347,7 @@ const CommandInfo kCommands[kCommandCount] = {
     {"vkQueueSubmit", ELIXIR_VK_PROC(elixir_vk_intercept_vkQueueSubmit), VK_API_VERSION_1_0, nullptr, CommandLevel::kDevice, kCommandCore | kCommandIntercepted | kCommandLibvulkanExport},
     {"vkQueueSubmit2", ELIXIR_VK_PROC(elixir_vk_intercept_vkQueueSubmit2), VK_API_VERSION_1_3, nullptr, CommandLevel::kDevice, kCommandCore | kCommandIntercepted | kCommandLibvulkanExport},
     {"vkQueueSubmit2KHR", ELIXIR_VK_PROC(elixir_vk_intercept_vkQueueSubmit2KHR), 0, "VK_KHR_synchronization2", CommandLevel::kDevice, kCommandIntercepted | kCommandAlias},
-    {"vkQueueWaitIdle", ELIXIR_VK_PROC(elixir_vk_sysv_vkQueueWaitIdle), VK_API_VERSION_1_0, nullptr, CommandLevel::kDevice, kCommandCore | kCommandLibvulkanExport},
+    {"vkQueueWaitIdle", ELIXIR_VK_PROC(elixir_vk_intercept_vkQueueWaitIdle), VK_API_VERSION_1_0, nullptr, CommandLevel::kDevice, kCommandCore | kCommandIntercepted | kCommandLibvulkanExport},
     {"vkRegisterCustomBorderColorEXT", ELIXIR_VK_PROC(elixir_vk_sysv_vkRegisterCustomBorderColorEXT), 0, "VK_EXT_descriptor_heap", CommandLevel::kDevice, 0},
     {"vkRegisterDeviceEventEXT", ELIXIR_VK_PROC(elixir_vk_sysv_vkRegisterDeviceEventEXT), 0, "VK_EXT_display_control", CommandLevel::kDevice, 0},
     {"vkRegisterDisplayEventEXT", ELIXIR_VK_PROC(elixir_vk_sysv_vkRegisterDisplayEventEXT), 0, "VK_EXT_display_control", CommandLevel::kDevice, 0},
@@ -4408,7 +4396,7 @@ const CommandInfo kCommands[kCommandCount] = {
     {"vkUpdateIndirectExecutionSetPipelineEXT", ELIXIR_VK_PROC(elixir_vk_sysv_vkUpdateIndirectExecutionSetPipelineEXT), 0, "VK_EXT_device_generated_commands", CommandLevel::kDevice, 0},
     {"vkUpdateIndirectExecutionSetShaderEXT", ELIXIR_VK_PROC(elixir_vk_sysv_vkUpdateIndirectExecutionSetShaderEXT), 0, "VK_EXT_device_generated_commands", CommandLevel::kDevice, 0},
     {"vkUpdateVideoSessionParametersKHR", ELIXIR_VK_PROC(elixir_vk_sysv_vkUpdateVideoSessionParametersKHR), 0, "VK_KHR_video_queue", CommandLevel::kDevice, 0},
-    {"vkWaitForFences", ELIXIR_VK_PROC(elixir_vk_sysv_vkWaitForFences), VK_API_VERSION_1_0, nullptr, CommandLevel::kDevice, kCommandCore | kCommandLibvulkanExport},
+    {"vkWaitForFences", ELIXIR_VK_PROC(elixir_vk_intercept_vkWaitForFences), VK_API_VERSION_1_0, nullptr, CommandLevel::kDevice, kCommandCore | kCommandIntercepted | kCommandLibvulkanExport},
     {"vkWaitForPresent2KHR", ELIXIR_VK_PROC(elixir_vk_sysv_vkWaitForPresent2KHR), 0, "VK_KHR_present_wait2", CommandLevel::kDevice, 0},
     {"vkWaitForPresentKHR", ELIXIR_VK_PROC(elixir_vk_sysv_vkWaitForPresentKHR), 0, "VK_KHR_present_wait", CommandLevel::kDevice, 0},
     {"vkWaitSemaphores", ELIXIR_VK_PROC(elixir_vk_sysv_vkWaitSemaphores), VK_API_VERSION_1_2, nullptr, CommandLevel::kDevice, kCommandCore | kCommandLibvulkanExport},

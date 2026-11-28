@@ -17,10 +17,26 @@ void AddThreadExitCallback(abi::SysvFn<void(void*)> fn, void* arg, void* dso_han
 
 int FutexWait(volatile std::int32_t* word, std::int32_t expected, std::int64_t timeout_ns) noexcept;
 void FutexWake(volatile std::int32_t* word, bool all) noexcept;
+void NoteWake(const volatile std::int32_t* word) noexcept;
 
 enum class WordWait { kWoken, kTimedOut };
 WordWait WaitOnWord(volatile std::int32_t* word, std::int32_t expected, std::int64_t timeout_ns) noexcept;
 bool WordWaitsKeepTheirTimeout() noexcept;
+
+inline constexpr std::int64_t kDefaultWordWaitSpinNs = 20000;
+void SetWordWaitSpin(std::int64_t nanoseconds) noexcept;
+std::int64_t WordWaitSpin() noexcept;
+
+inline constexpr int kWordWaitLengthBuckets = 6;
+
+struct WordWaitCounts {
+  std::uint64_t ended_spinning = 0;
+  std::uint64_t spun_in_vain = 0;
+  std::uint64_t not_spun = 0;
+  std::uint64_t spun_nanoseconds = 0;
+  std::uint64_t sleeps[kWordWaitLengthBuckets] = {};
+};
+WordWaitCounts TakeWordWaitCounts() noexcept;
 
 }
 

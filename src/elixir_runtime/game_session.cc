@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "bionic/runtime.h"
+#include "elixir_runtime/frame_times.h"
 #include "elixir_runtime/text.h"
 #include "elixir_runtime/host_log.h"
 #include "elixir_runtime/roblox_startup.h"
@@ -72,6 +73,7 @@ struct PresentPacing {
   std::array<std::atomic<std::int64_t>, 8> stall_at_us{};
 };
 PresentPacing g_pacing;
+FrameTimes g_frame_times;
 std::atomic<DWORD> g_present_thread{0};
 
 void NotePresentPacing() {
@@ -80,6 +82,7 @@ void NotePresentPacing() {
   const std::int64_t last = g_pacing.last_us.exchange(now, std::memory_order_relaxed);
   if (last == 0) return;
   const std::int64_t gap = now - last;
+  g_frame_times.Add(gap);
   const std::int64_t average = g_pacing.average_us.load(std::memory_order_relaxed);
   if (gap > g_pacing.max_gap_us.load(std::memory_order_relaxed)) g_pacing.max_gap_us.store(gap, std::memory_order_relaxed);
   if (average > 0 && average < 20000 && gap >= 40000 && gap > 3 * average) {
@@ -93,6 +96,7 @@ void NotePresentPacing() {
 std::string PacingReport(std::int64_t session_start_us) {
   const std::int64_t max_gap = g_pacing.max_gap_us.exchange(0, std::memory_order_relaxed);
   const std::uint32_t stalls = g_pacing.stalls.exchange(0, std::memory_order_relaxed);
+  const std::string frame_times = DescribeFrameTimes(g_frame_times.Take());
   if (max_gap == 0) return {};
   std::string report = "; frame gaps: max " + std::to_string(max_gap / 1000) + " ms";
   if (stalls > 0) {
@@ -106,6 +110,7 @@ std::string PacingReport(std::int64_t session_start_us) {
     }
     report += std::string(stalls > shown ? " ..." : "") + " s)";
   }
+  if (!frame_times.empty()) report += "; " + frame_times;
   return report;
 }
 
@@ -471,6 +476,8 @@ GameSessionEnd GameSession::Run(const std::atomic<bool>& stop, std::uint64_t tim
 #if defined(ELIXIR_RUNTIME_HAS_VULKAN)
       const std::string textures = vulkan::Etc2DecodeReport();
       if (!textures.empty()) Log("session: " + textures);
+      const std::string calls = vulkan::CallTimesReport();
+      if (!calls.empty()) Log("session: " + calls);
 #endif
       frames_at_report = frames;
       last_report = now;

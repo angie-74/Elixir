@@ -923,6 +923,7 @@ ELIXIR_SYSV void elixir_vk_intercept_vkDestroyImage(VkDevice device, VkImage ima
 ELIXIR_SYSV void elixir_vk_intercept_vkDestroyInstance(VkInstance instance, const VkAllocationCallbacks* pAllocator);
 ELIXIR_SYSV void elixir_vk_intercept_vkDestroySurfaceKHR(VkInstance instance, VkSurfaceKHR surface, const VkAllocationCallbacks* pAllocator);
 ELIXIR_SYSV void elixir_vk_intercept_vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain, const VkAllocationCallbacks* pAllocator);
+ELIXIR_SYSV VkResult elixir_vk_intercept_vkDeviceWaitIdle(VkDevice device);
 ELIXIR_SYSV VkResult elixir_vk_intercept_vkEnumerateDeviceExtensionProperties(VkPhysicalDevice physicalDevice, const char* pLayerName, uint32_t* pPropertyCount, VkExtensionProperties* pProperties);
 ELIXIR_SYSV VkResult elixir_vk_intercept_vkEnumerateInstanceExtensionProperties(const char* pLayerName, uint32_t* pPropertyCount, VkExtensionProperties* pProperties);
 ELIXIR_SYSV VkResult elixir_vk_intercept_vkEnumerateInstanceLayerProperties(uint32_t* pPropertyCount, VkLayerProperties* pProperties);
@@ -967,11 +968,13 @@ ELIXIR_SYSV VkResult elixir_vk_intercept_vkQueuePresentKHR(VkQueue queue, const 
 ELIXIR_SYSV VkResult elixir_vk_intercept_vkQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence);
 ELIXIR_SYSV VkResult elixir_vk_intercept_vkQueueSubmit2(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence);
 ELIXIR_SYSV VkResult elixir_vk_intercept_vkQueueSubmit2KHR(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence);
+ELIXIR_SYSV VkResult elixir_vk_intercept_vkQueueWaitIdle(VkQueue queue);
 ELIXIR_SYSV VkResult elixir_vk_intercept_vkResetCommandBuffer(VkCommandBuffer commandBuffer, VkCommandBufferResetFlags flags);
 ELIXIR_SYSV VkResult elixir_vk_intercept_vkResetCommandPool(VkDevice device, VkCommandPool commandPool, VkCommandPoolResetFlags flags);
 ELIXIR_SYSV void elixir_vk_intercept_vkUnmapMemory(VkDevice device, VkDeviceMemory memory);
 ELIXIR_SYSV VkResult elixir_vk_intercept_vkUnmapMemory2(VkDevice device, const VkMemoryUnmapInfo* pMemoryUnmapInfo);
 ELIXIR_SYSV VkResult elixir_vk_intercept_vkUnmapMemory2KHR(VkDevice device, const VkMemoryUnmapInfo* pMemoryUnmapInfo);
+ELIXIR_SYSV VkResult elixir_vk_intercept_vkWaitForFences(VkDevice device, uint32_t fenceCount, const VkFence* pFences, VkBool32 waitAll, uint64_t timeout);
 }
 
 #endif

@@ -369,9 +369,13 @@ abi::g_long Futex(volatile std::int32_t* word, int op, std::int32_t value, abi::
       if (value > 0 && wake_trace::Enabled()) wake_trace::Record(wake_trace::Event::kWake, word, site, 0);
       if (command == kWakeBitset && static_cast<std::uint32_t>(value3) != kMatchAny) {
         g_futex.masked_wakes.fetch_add(1, std::memory_order_relaxed);
-        if (value > 0) WakeByAddressAll(const_cast<std::int32_t*>(word));
+        if (value > 0) {
+          threads::NoteWake(word);
+          WakeByAddressAll(const_cast<std::int32_t*>(word));
+        }
         return 0;
       }
+      if (value > 0) threads::NoteWake(word);
       if (value == 1) {
         WakeByAddressSingle(const_cast<std::int32_t*>(word));
       } else if (value > 1) {
@@ -384,6 +388,7 @@ abi::g_long Futex(volatile std::int32_t* word, int op, std::int32_t value, abi::
     case kRequeue:
       g_futex.requeues.fetch_add(1, std::memory_order_relaxed);
       if (wake_trace::Enabled()) wake_trace::Record(wake_trace::Event::kWake, word, site, 0);
+      threads::NoteWake(word);
       WakeByAddressAll(const_cast<std::int32_t*>(word));
       return 0;
     case kWakeOp: {
@@ -424,8 +429,14 @@ abi::g_long Futex(volatile std::int32_t* word, int op, std::int32_t value, abi::
         case 5: condition = old_value >= compare_arg; break;
         default: return ErrnoResult(guest::kENOSYS);
       }
-      if (value > 0) WakeByAddressAll(const_cast<std::int32_t*>(word));
-      if (condition && timeout_or_value2 > 0) WakeByAddressAll(const_cast<std::int32_t*>(word2));
+      if (value > 0) {
+        threads::NoteWake(word);
+        WakeByAddressAll(const_cast<std::int32_t*>(word));
+      }
+      if (condition && timeout_or_value2 > 0) {
+        threads::NoteWake(word2);
+        WakeByAddressAll(const_cast<std::int32_t*>(word2));
+      }
       return 0;
     }
     default: return ErrnoResult(guest::kENOSYS);
@@ -483,7 +494,13 @@ std::string FutexStatisticsReport() {
     return std::to_string(counter.exchange(0, std::memory_order_relaxed));
   };
   core::FutexCounters& f = core::g_futex;
-  if (f.waits.load(std::memory_order_relaxed) == 0 && f.wakes.load(std::memory_order_relaxed) == 0) return {};
+  const threads::WordWaitCounts word_waits = threads::TakeWordWaitCounts();
+  std::uint64_t sleeps = 0;
+  for (const std::uint64_t count : word_waits.sleeps) sleeps += count;
+  if (f.waits.load(std::memory_order_relaxed) == 0 && f.wakes.load(std::memory_order_relaxed) == 0 && sleeps == 0 &&
+      word_waits.ended_spinning == 0) {
+    return {};
+  }
   std::string report = "futex: " + take(f.waits) + " waits (" + take(f.timed_waits) + " timed, " +
                        take(f.masked_waits) + " with a bitset; " + take(f.long_waits) + " lasted 30 ms or more, " +
                        take(f.long_timeouts) + " of them until their timeout), " + take(f.wakes) + " wakes (" +
@@ -497,6 +514,16 @@ std::string FutexStatisticsReport() {
     report += "; " + std::to_string(timeouts) + " timed waits ran to their timeout, " +
               std::to_string(hundredths / 100) + "." + (fraction.size() < 2 ? "0" : "") + fraction +
               " ms late on average";
+  }
+  report += "; threads slept " + std::to_string(sleeps) + " times: " + std::to_string(word_waits.sleeps[0]) +
+            " under 20 us, " + std::to_string(word_waits.sleeps[1]) + " to 50 us, " +
+            std::to_string(word_waits.sleeps[2]) + " to 200 us, " + std::to_string(word_waits.sleeps[3]) +
+            " to 1 ms, " + std::to_string(word_waits.sleeps[4]) + " to 5 ms, " +
+            std::to_string(word_waits.sleeps[5]) + " longer";
+  if (word_waits.ended_spinning != 0 || word_waits.spun_in_vain != 0 || word_waits.not_spun != 0) {
+    report += "; " + std::to_string(word_waits.ended_spinning) + " waits ended while spinning, " +
+              std::to_string(word_waits.spun_in_vain) + " spun in vain, " + std::to_string(word_waits.not_spun) +
+              " did not spin; " + std::to_string(word_waits.spun_nanoseconds / 1000000) + " ms spun";
   }
   return report;
 }

@@ -509,6 +509,13 @@ int RunElixirRuntime(const std::vector<std::string>& arguments) {
                          : timer_1ms ? "timeBeginPeriod(1) failed" : "system default"));
     Log(std::string("timed waits: ") +
         (bionic::threads::WordWaitsKeepTheirTimeout() ? "keep their own timeout" : "rounded up to whole milliseconds"));
+    if (options.wait_spin_us) {
+      bionic::threads::SetWordWaitSpin(static_cast<std::int64_t>(*options.wait_spin_us) * 1000);
+    }
+    const std::int64_t spin_ns = bionic::threads::WordWaitSpin();
+    Log(spin_ns > 0 ? "waits: a thread watches for its wake for up to " + std::to_string(spin_ns / 1000) +
+                          " us before it sleeps, while that keeps paying off"
+                    : "waits: a thread sleeps at once");
     Log(std::string("MMCSS for render/audio threads: ") + (MmcssEnabled() ? "on" : "off"));
   }
 

@@ -52,6 +52,7 @@ struct LaunchOptions {
   std::optional<double> sharpness;
   std::optional<bool> dynamic_resolution;
   std::optional<int> target_fps;
+  std::optional<int> wait_spin_us;
   std::optional<bool> user_fflags;
   std::string discord_app;
   std::optional<bool> discord_game;
